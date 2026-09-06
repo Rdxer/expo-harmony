@@ -9,10 +9,12 @@ import { parsePrebuildArgs } from './prebuild/options';
 import { resolveProject } from './project';
 import { withHarmonyProjectLockAsync } from './projectLock';
 import { parseRunArgs } from './run/options';
+import { parseStartArgs } from './start/options';
 
 const Help = `Usage: expo-harmony <command> [project] [options]
 
 Commands:
+  start                 Start Expo Metro for Harmony development
   prebuild              Generate the Harmony native project with Expo CNG
   prebuild --clean      Safely recreate the managed Harmony directory
   prebuild --check      Compare generated desired state without project writes
@@ -39,6 +41,7 @@ Options:
   --sync                Re-run prebuild before building
   --check               Validate an existing export without writing
   --reset-cache         Reset Metro while exporting or starting
+  -c, --clear           Alias for --reset-cache (start)
   -h, --help            Show this help
 `;
 
@@ -48,7 +51,8 @@ type Invocation = { command: 'help' }
   | { command: 'export:embed'; parsed: ReturnType<typeof parseExportEmbedArgs>; projectRoot: string }
   | { command: 'modules'; parsed: ReturnType<typeof parseModulesArgs>; projectRoot: string }
   | { command: 'prebuild'; parsed: ReturnType<typeof parsePrebuildArgs>; projectRoot: string }
-  | { command: 'run'; parsed: ReturnType<typeof parseRunArgs>; projectRoot: string };
+  | { command: 'run'; parsed: ReturnType<typeof parseRunArgs>; projectRoot: string }
+  | { command: 'start'; parsed: ReturnType<typeof parseStartArgs>; projectRoot: string };
 
 function parseInvocation(argv: string[]): Invocation {
   if (argv.length === 0 || (argv.length === 1 && ['--help', '-h'].includes(argv[0]))) {
@@ -56,7 +60,7 @@ function parseInvocation(argv: string[]): Invocation {
   }
 
   const command = argv[0] as Exclude<Invocation['command'], 'help'>;
-  if (!['build', 'prebuild', 'doctor', 'export:embed', 'modules', 'run'].includes(command)) {
+  if (!['build', 'prebuild', 'doctor', 'export:embed', 'modules', 'run', 'start'].includes(command)) {
     throw new HarmonyCliError('ERR_HARMONY_CONFIG_INVALID', `Unknown command: ${command}`, {
       operation: 'parse-arguments',
     });
@@ -72,7 +76,9 @@ function parseInvocation(argv: string[]): Invocation {
           ? parseExportEmbedArgs(argv.slice(1))
           : command === 'modules'
             ? parseModulesArgs(argv.slice(1))
-            : parseRunArgs(argv.slice(1));
+            : command === 'start'
+              ? parseStartArgs(argv.slice(1))
+              : parseRunArgs(argv.slice(1));
   if (parsed.help) return { command: 'help' };
 
   const projectRoot = resolveProject(parsed.project ? path.resolve(parsed.project) : process.cwd());
@@ -88,6 +94,30 @@ async function runAsync(
   if (invocation.command === 'help') {
     io.log(Help);
     return 0;
+  }
+
+  if (invocation.command === 'start') {
+    const { startExpoMetroAsync } = await import('./run/metro.js');
+    const metro = await startExpoMetroAsync(invocation.projectRoot, {
+      ...invocation.parsed,
+      interactive: true,
+    });
+
+    try {
+      if (metro.owner === 'existing') {
+        io.log(`Expo Metro is already running on port ${metro.port}.`);
+        if (invocation.parsed.resetCache) {
+          io.warn('Stop the existing Metro server and run this command again to reset its cache.');
+        }
+      } else {
+        io.log('\n› Logs for your project will appear below. Press Ctrl+C to exit.');
+        await metro.waitAsync();
+      }
+
+      return 0;
+    } finally {
+      await metro.stop();
+    }
   }
 
   if (invocation.command === 'doctor') {

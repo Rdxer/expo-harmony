@@ -34,13 +34,13 @@ module.exports = config;
 
 当 `enabled` 为 `false` 时，`withHarmonyConfig` 会直接返回传入的配置，且不会加载 RNOH 依赖。因此，应用可以将 `@react-native-oh/react-native-harmony` 放在 `optionalDependencies` 中，没有安装 Harmony 工具链的 Android、iOS 开发者也不会受到影响。
 
-使用 Expo CLI 启动 Metro，并由 Harmony 原生应用发起 Harmony bundle 请求，例子如下：
+安装 `@expo-harmony/cli` 后，使用 `expo-harmony start` 启动 Metro，它会自动设置 `EXPO_METRO_TARGET=harmony`，再由 Harmony 原生应用发起 Harmony bundle 请求：
 
 ```json
 {
   "scripts": {
     "start": "expo start",
-    "harmony": "cross-env EXPO_METRO_TARGET=harmony expo start"
+    "start:harmony": "expo-harmony start"
   }
 }
 ```

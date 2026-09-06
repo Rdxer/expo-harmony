@@ -2,7 +2,7 @@
 
 [**GitHub 仓库**](https://github.com/renbaoshuo/expo-harmony/tree/master/packages/cli)
 
-为 Expo 项目提供 HarmonyOS 平台的命令行工具，支持 CNG 原生工程生成、环境诊断、Harmony Expo Module 发现与校验、生产 Bundle 导出，以及 HAP 的构建、安装和启动。
+为 Expo 项目提供 HarmonyOS 平台的命令行工具，支持 Metro 开发服务、CNG 原生工程生成、环境诊断、Harmony Expo Module 发现与校验、生产 Bundle 导出，以及 HAP 的构建、安装和启动。
 
 ## 安装
 
@@ -20,6 +20,7 @@ HAP 构建需要完整的 HarmonyOS SDK（含 HMS 与 OpenHarmony 组件）、OH
 
 | 命令 | 作用 |
 | --- | --- |
+| `expo-harmony start` | 启动 Harmony 开发所需的 Expo Metro 服务 |
 | `expo-harmony prebuild` | 使用 Expo CNG 生成或更新 HarmonyOS 原生工程 |
 | `expo-harmony prebuild --clean` | 安全删除并重新生成受管理的 `harmony` 目录 |
 | `expo-harmony prebuild --check` | 在隔离目录中生成期望状态并比较差异，不修改项目文件 |
@@ -34,11 +35,26 @@ HAP 构建需要完整的 HarmonyOS SDK（含 HMS 与 OpenHarmony 组件）、OH
 所有命令都可接收可选的项目路径（`modules` 命令写在子命令之后）；未提供时从当前目录向上查找最近的项目根目录作为默认值：
 
 ```sh
+npx expo-harmony start ./my-app
 npx expo-harmony doctor ./my-app
 npx expo-harmony prebuild ./my-app
 npx expo-harmony build ./my-app --variant release
 npx expo-harmony run ./my-app --device <hdc-target>
 ```
+
+## Start
+
+```sh
+npx expo-harmony start
+npx expo-harmony start --port 8082
+npx expo-harmony start --clear
+```
+
+`start` 调用项目本地的 Expo CLI，以 `--dev-client` 模式启动 Metro，并自动设置 `EXPO_METRO_TARGET=harmony`。它只启动 JS 开发服务，不执行原生工程生成、构建、安装、应用启动或设备端口映射，也不要求 HarmonyOS SDK 和设备就绪。新启动的 Metro 在当前终端输出日志，按 Ctrl+C 退出。
+
+支持 `--port <number>`（默认 `8081`）和 `--reset-cache`（别名 `--clear`、`-c`）。端口上已有 Metro 时提示并退出，不停止已有服务；此时缓存选项不会生效，需要先停止已有 Metro 后重新执行命令。端口被其他进程占用时会报错。
+
+需要构建并启动应用时，在另一个终端运行 `expo-harmony run --no-bundler`；若指定了端口，两个命令使用相同的 `--port`。
 
 ## Prebuild
 

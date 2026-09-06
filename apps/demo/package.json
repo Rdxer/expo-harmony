@@ -20,6 +20,7 @@
   "author": "Baoshuo <i@baoshuo.ren>",
   "scripts": {
     "start": "expo start",
+    "start:harmony": "expo-harmony start",
     "run:harmony": "expo-harmony run",
     "run:android": "expo run:android",
     "run:ios": "expo run:ios",

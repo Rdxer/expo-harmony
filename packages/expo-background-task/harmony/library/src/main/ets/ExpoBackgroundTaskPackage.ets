@@ -221,7 +221,7 @@ export class ExpoBackgroundTaskModule extends ExpoModule {
 }
 
 function status(context: ExpoModuleContext): number {
-  return hasWorkSchedulerExtension() && ExpoTaskManagerRegistry.canEnsureRuntimeForContext(context)
+  return hasWorkSchedulerExtension() && ExpoTaskManagerRegistry.hasRuntimeLoader(ExpoTaskManagerRegistry.ownerKey(context))
     ? BACKGROUND_TASK_STATUS_AVAILABLE
     : BACKGROUND_TASK_STATUS_RESTRICTED;
 }

@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('node:fs');
+const path = require('node:path');
 
 const { createRunOncePlugin } = require('@expo/config-plugins');
 const {
@@ -85,10 +86,9 @@ const withBackgroundFetch = config => {
   });
 
   return withHarmonyDangerousMod(config, async mod => {
-    const moduleName = config.harmony?.moduleName || 'entry';
     const file = await HarmonyPaths.resolveHarmonyPath(
       mod.modRequest.platformProjectRoot,
-      `${moduleName}/src/main/ets/expo-background-fetch/ExpoBackgroundFetchWorkSchedulerExtension.ets`
+      path.posix.join(path.posix.dirname(HarmonyPaths.HARMONY_PATHS.moduleJson), EXTENSION_SOURCE)
     );
 
     await writeGeneratedSource(file);

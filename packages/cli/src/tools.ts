@@ -198,6 +198,19 @@ function resolveHarmonyToolchain(): HarmonyToolchain {
   return { hdc, hvigor, ohpm, sdkHome, toolsRoot };
 }
 
+function createHarmonyToolchainEnv(toolchain = resolveHarmonyToolchain()): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    HARMONY_OHPM: toolchain.ohpm.command,
+    // A script-based Hvigor invocation must retain both its script and Node executable.
+    HARMONY_HVIGORW: toolchain.hvigor.args[0] || toolchain.hvigor.command,
+    ...(toolchain.hvigor.args.length > 0 ? { HARMONY_NODE: toolchain.hvigor.command } : {}),
+    ...(toolchain.sdkHome && !process.env.DEVECO_SDK_HOME
+      ? { DEVECO_SDK_HOME: toolchain.sdkHome }
+      : {}),
+  };
+}
+
 function resolveHarmonyEmulator(toolchain: HarmonyToolchain): HarmonyTool {
   if (process.env.HARMONY_EMULATOR) {
     return { args: [], command: process.env.HARMONY_EMULATOR, source: 'override' };
@@ -295,6 +308,7 @@ async function resolveHarmonyBuildPlanAsync(
 }
 
 export {
+  createHarmonyToolchainEnv,
   resolveHarmonyBuildPlanAsync,
   resolveHarmonyBuildPlanIfPresentAsync,
   resolveHarmonyEmulator,

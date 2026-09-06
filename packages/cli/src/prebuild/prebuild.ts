@@ -4,7 +4,7 @@ import { HarmonyCliError } from '../errors';
 import { formatDiagnostics, spawnAsync } from '../process';
 import { withHarmonyProjectLockAsync } from '../projectLock';
 import { resolveExpoCli } from '../expo';
-import { resolveHarmonyBuildPlanAsync } from '../tools';
+import { createHarmonyToolchainEnv, resolveHarmonyBuildPlanAsync } from '../tools';
 import { assertSafeCleanTarget } from './clean';
 import { packAsync } from './template';
 
@@ -34,7 +34,7 @@ async function prebuildParsedUnlockedAsync(
       capture: Boolean(options.capture),
       cwd: projectRoot,
       env: {
-        ...process.env,
+        ...createHarmonyToolchainEnv(),
         ...packed.env,
         ...(options.buildType ? { EXPO_HARMONY_BUILD_TYPE: options.buildType } : {}),
       },

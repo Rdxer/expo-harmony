@@ -11,7 +11,7 @@ import { HarmonyCliError } from '../errors';
 import { isInside } from '../path';
 import { spawnAsync } from '../process';
 import { withHarmonyProjectLockAsync } from '../projectLock';
-import { resolveHarmonyBuildPlanAsync, type HarmonyBuildPlan } from '../tools';
+import { createHarmonyToolchainEnv, resolveHarmonyBuildPlanAsync, type HarmonyBuildPlan } from '../tools';
 import { resolveExpoCli } from '../expo';
 import { packAsync } from './template';
 
@@ -155,7 +155,7 @@ async function checkUnlockedAsync(project, options: CheckOptions) {
       capture: true,
       cwd: expected,
       env: {
-        ...process.env,
+        ...createHarmonyToolchainEnv(),
         ...packed.env,
         ...(options.buildType ? { EXPO_HARMONY_BUILD_TYPE: options.buildType } : {}),
         EXPO_HARMONY_CHECK_MIRROR_ROOT: temp,

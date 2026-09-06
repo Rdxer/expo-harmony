@@ -1,6 +1,7 @@
 {
   "name": "expo-harmony",
   "version": "0.0.0",
+  "private": true,
   "keywords": [
     "react-native",
     "expo",

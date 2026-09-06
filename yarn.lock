@@ -1608,6 +1608,7 @@ __metadata:
   resolution: "@expo-harmony/expo-background-task@workspace:packages/expo-background-task"
   dependencies:
     "@expo-harmony/config-plugins": "workspace:*"
+    "@expo-harmony/expo-module-scripts": "workspace:*"
     "@expo-harmony/expo-modules-core": "workspace:*"
     "@expo-harmony/expo-task-manager": "workspace:*"
     "@expo/config-plugins": "npm:55.0.10"

@@ -249,7 +249,7 @@ export class ExpoBackgroundFetchModule extends ExpoModule {
 }
 
 function status(context: ExpoModuleContext): number {
-  return hasWorkSchedulerExtension() && ExpoTaskManagerRegistry.canEnsureRuntimeForContext(context)
+  return hasWorkSchedulerExtension() && ExpoTaskManagerRegistry.hasRuntimeLoader(ExpoTaskManagerRegistry.ownerKey(context))
     ? BACKGROUND_FETCH_STATUS_AVAILABLE
     : BACKGROUND_FETCH_STATUS_RESTRICTED;
 }

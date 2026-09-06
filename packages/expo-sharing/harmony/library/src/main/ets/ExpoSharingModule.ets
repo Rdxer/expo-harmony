@@ -685,26 +685,34 @@ async function resolveURLPayload(payload: SharePayload): Promise<ResolvedRecord>
 
 async function streamURLHeaders(url: string): Promise<Object> {
   const request = http.createHttp();
-  let headers: Object = new Object();
-  const receive = (value: Object): void => {
-    headers = value;
-  };
-  const discard = (_value: ArrayBuffer): void => {};
-
-  request.on('headersReceive', receive);
-  request.on('dataReceive', discard);
   try {
-    await request.requestInStream(url, {
-      method: http.RequestMethod.GET,
-      connectTimeout: URL_TIMEOUT_MS,
-      readTimeout: URL_TIMEOUT_MS,
-      usingCache: false,
-    });
+    return await new Promise<Object>((resolve: (headers: Object) => void, reject: (error: Error) => void): void => {
+      let headers: Object = new Object();
+      request.on('headersReceive', (value: Object): void => {
+        headers = value;
+      });
+      // Header events include intermediate responses without a reliable status
+      // code. NetStack follows redirects before delivering the target's body.
+      request.on('dataReceive', (_value: ArrayBuffer): void => resolve(headers));
 
-    return headers;
+      // Keep GET for servers whose redirects or metadata differ for HEAD.
+      // Read only the first chunk, then destroy without waiting for the full body.
+      // Completion handles empty bodies; rejection after destroy is consumed.
+      request
+        .requestInStream(url, {
+          method: http.RequestMethod.GET,
+          connectTimeout: URL_TIMEOUT_MS,
+          readTimeout: URL_TIMEOUT_MS,
+          usingCache: false,
+        })
+        .then(
+          (): void => resolve(headers),
+          (error: Error): void => reject(error),
+        );
+    });
   } finally {
-    request.off('headersReceive', receive);
-    request.off('dataReceive', discard);
+    request.off('headersReceive');
+    request.off('dataReceive');
     request.destroy();
   }
 }

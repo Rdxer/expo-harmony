@@ -28,10 +28,9 @@ function findStaleConfigPlugins(manifest, plugins) {
 
 async function removeStalePluginFilesAsync(root, manifest, plugins) {
   const owners = new Set(plugins.map(plugin => plugin.owner));
+  const files = (manifest?.managedFiles || []).filter(descriptor => owners.has(descriptor.owner));
 
-  for (const descriptor of manifest?.managedFiles || []) {
-    if (!owners.has(descriptor.owner)) continue;
-
+  for (const descriptor of files) {
     const target = path.join(root, ...descriptor.path.split('/'));
 
     let stat;
@@ -53,6 +52,24 @@ async function removeStalePluginFilesAsync(root, manifest, plugins) {
 
     await fs.promises.rm(target, { force: true });
   }
+
+  // Keep missing files in the result so a retry also removes their declarations.
+  return files.map(descriptor => descriptor.path);
+}
+
+function removeStaleExtensionAbilities(module, moduleJsonPath: string, files: readonly string[]) {
+  if (!Array.isArray(module.extensionAbilities) || files.length === 0) return module;
+
+  const stale = new Set(files);
+  const directory = path.posix.dirname(moduleJsonPath);
+
+  return {
+    ...module,
+    extensionAbilities: module.extensionAbilities.filter(extension => (
+      typeof extension?.srcEntry !== 'string'
+      || !stale.has(path.posix.join(directory, extension.srcEntry))
+    )),
+  };
 }
 
 function removeStaleResources(results, kind, plugins) {
@@ -80,6 +97,7 @@ function removeStaleResources(results, kind, plugins) {
 export {
   findStaleConfigPlugins,
   readPreviousCngManifestAsync,
+  removeStaleExtensionAbilities,
   removeStalePluginFilesAsync,
   removeStaleResources,
 };

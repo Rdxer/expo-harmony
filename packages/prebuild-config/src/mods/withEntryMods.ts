@@ -27,7 +27,7 @@ import {
   upsertNamed,
 } from '../reconcile';
 import * as render from '../renderers';
-import { removeStaleResources } from '../stale';
+import { removeStaleExtensionAbilities, removeStaleResources } from '../stale';
 
 function setResource(items, name, value) {
   const resources = (Array.isArray(items) ? items : [])
@@ -169,7 +169,14 @@ function withEntryMods(config, harmony) {
       entities: ['entity.system.home'],
       actions: ['action.system.home'],
     };
-    const module = readRecord(mod.modResults.module);
+    const module = removeStaleExtensionAbilities(
+      readRecord(mod.modResults.module),
+      HarmonyPaths.toPosixRelative(
+        mod.modRequest.projectRoot,
+        path.join(mod.modRequest.platformProjectRoot, HarmonyPaths.HARMONY_PATHS.moduleJson)
+      ),
+      mod._internal?.harmonyStalePluginFiles || []
+    );
     const previous = mod._internal?.harmonyPreviousManagedIdentity;
     const plugins = getHarmonyConfigPlugins(mod);
 

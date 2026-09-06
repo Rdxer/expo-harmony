@@ -37,7 +37,7 @@ function withPreparationMod(config, harmony) {
     mod._internal.harmonyConfigPlugins = plugins;
     mod._internal.harmonyStaleConfigPlugins = stale;
 
-    await removeStalePluginFilesAsync(root, manifest, stale);
+    mod._internal.harmonyStalePluginFiles = await removeStalePluginFilesAsync(root, manifest, stale);
 
     const packed = path.join(platform, 'gitignore');
     const gitignore = path.join(platform, '.gitignore');

@@ -36,30 +36,43 @@ function isBundledNativeTypeDependency(packageRoot, manifest, name, specifier) {
   }
 }
 
-export async function sanitizeHarmonyHar(harPath) {
-  const tempRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'expo-har-'));
-  const output = path.join(tempRoot, 'library.har');
-  try {
-    await tar.x({ cwd: tempRoot, file: harPath, strict: true });
+export async function sanitizeHarmonyHar(file, { sourceManifest: source, workspaceVersions: versions = {} } = {}) {
+  const temp = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'expo-har-'));
+  const output = path.join(temp, 'library.har');
 
-    const packageRoot = path.join(tempRoot, 'package');
-    const builtManifest = path.join(packageRoot, 'oh-package.json5');
-    const built = JSON5.parse(await fs.promises.readFile(builtManifest, 'utf8'));
+  try {
+    await tar.x({ cwd: temp, file, strict: true });
+
+    const root = path.join(temp, 'package');
+    const target = path.join(root, 'oh-package.json5');
+    const manifest = JSON5.parse(await fs.promises.readFile(target, 'utf8'));
 
     for (const section of ['dependencies', 'devDependencies', 'dynamicDependencies']) {
-      for (const [name, value] of Object.entries(built[section] || {})) {
+      for (const [name, value] of Object.entries(manifest[section] || {})) {
         if (typeof value !== 'string' || !localDependency.test(value)) continue;
-        if (isBundledNativeTypeDependency(packageRoot, built, name, value)) continue;
+        if (isBundledNativeTypeDependency(root, manifest, name, value)) continue;
 
-        throw new Error(`Cannot publish ${harPath}: ${section}.${name} must use a package version.`);
+        // Hvigor can retain an override's local HAR path. Only rewrite known
+        // workspace dependencies, preserving the authored publication range.
+        if (Object.hasOwn(versions, name)) {
+          const version = source?.[section]?.[name] || versions[name];
+          if (typeof version === 'string' && !localDependency.test(version)) {
+            manifest[section][name] = version;
+            continue;
+          }
+        }
+
+        throw new Error(`Cannot publish ${file}: ${section}.${name} must use a package version.`);
       }
     }
 
-    await fs.promises.rm(path.join(packageRoot, 'oh-package-lock.json5'), { force: true });
-    await tar.c({ cwd: tempRoot, file: output, gzip: true, portable: true }, ['package']);
-    await fs.promises.copyFile(output, harPath);
+    await fs.promises.writeFile(target, `${JSON5.stringify(manifest, null, 2)}\n`);
+    await fs.promises.rm(path.join(root, 'oh-package-lock.json5'), { force: true });
+
+    await tar.c({ cwd: temp, file: output, gzip: true, portable: true }, ['package']);
+    await fs.promises.copyFile(output, file);
   } finally {
-    await fs.promises.rm(tempRoot, { recursive: true, force: true });
+    await fs.promises.rm(temp, { recursive: true, force: true });
   }
 }
 

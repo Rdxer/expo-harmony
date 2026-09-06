@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { normalizeHarmonyModuleMetadata } from '@expo-harmony/expo-modules-autolinking';
 import JSON5 from 'json5';
 import { sanitizeHarmonyHar } from './har.mjs';
+import { findWorkspacePackages, planWorkspaceBuild, workspaceOverrides, withWorkspaceOverrides } from './workspace.mjs';
 
 const HARMONY_PROJECT = 'harmony';
 const HARMONY_MODULE = 'library';
@@ -94,13 +95,34 @@ function modulePaths(packageRoot, moduleName = harmonyModuleName(packageRoot)) {
   };
 }
 
+async function loadBuildConfig(root, manifest) {
+  const file = path.join(root, 'expo-module.config.json');
+  if (await exists(file)) {
+    return normalizeConfig(await readJson(file), manifest);
+  }
+
+  // RNOH runtime packages (including expo-modules-core) have no Expo module
+  // registration. Keep their existing HAR filename and metadata contract.
+  const linking = manifest.harmony?.autolinking;
+  if (linking?.mainHarPath === 'harmony' && linking.ohPackageName === manifest.name) return { modules: [] };
+
+  throw new TypeError(`${manifest.name} must declare an Expo Harmony module or a Harmony RNOH package.`);
+}
+
+function projectPaths(root, config) {
+  const paths = modulePaths(root);
+  if (config.modules.length === 0) {
+    paths.bundledHar = inside(root, `harmony/${paths.moduleName}.har`, 'Bundled HAR');
+  }
+  return paths;
+}
+
 export async function loadModuleProject(root = process.cwd()) {
   const packageRoot = await fs.promises.realpath(path.resolve(root));
   const pkg = await readJson(path.join(packageRoot, 'package.json'));
-  const raw = await readJson(path.join(packageRoot, 'expo-module.config.json'));
 
-  const config = normalizeConfig(raw, pkg);
-  const paths = modulePaths(packageRoot);
+  const config = await loadBuildConfig(packageRoot, pkg);
+  const paths = projectPaths(packageRoot, config);
 
   await assertExistingAncestorInside(packageRoot, paths.projectRoot, 'Harmony project');
   const projectRoot = await fs.promises.realpath(paths.projectRoot);
@@ -110,6 +132,9 @@ export async function loadModuleProject(root = process.cwd()) {
   await assertExistingAncestorInside(packageRoot, paths.sourceOutput, 'Hvigor HAR output');
   await assertExistingAncestorInside(packageRoot, paths.bundledHar, 'Bundled HAR');
   await assertNonEmptyRegularFile(paths.ohPackageManifest, 'OHPM package manifest', moduleRoot);
+
+  const library = JSON5.parse(await fs.promises.readFile(paths.ohPackageManifest, 'utf8'));
+  const project = JSON5.parse(await fs.promises.readFile(path.join(projectRoot, 'oh-package.json5'), 'utf8'));
 
   return {
     packageRoot,
@@ -121,6 +146,8 @@ export async function loadModuleProject(root = process.cwd()) {
     sourceOutput: paths.sourceOutput,
     bundledHar: paths.bundledHar,
     ohPackageManifest: paths.ohPackageManifest,
+    ohPackage: library,
+    ohProjectPackage: project,
   };
 }
 
@@ -136,10 +163,9 @@ async function exists(file) {
 export async function inspectModule(root = process.cwd()) {
   const packageRoot = await fs.promises.realpath(path.resolve(root));
   const pkg = await readJson(path.join(packageRoot, 'package.json'));
-  const raw = await readJson(path.join(packageRoot, 'expo-module.config.json'));
 
-  const config = normalizeConfig(raw, pkg);
-  const paths = modulePaths(packageRoot);
+  const config = await loadBuildConfig(packageRoot, pkg);
+  const paths = projectPaths(packageRoot, config);
 
   return {
     config,
@@ -215,29 +241,45 @@ function spawnCommand(command, args, options = {}) {
       cwd: options.cwd,
       env: process.env,
       shell: false,
+      signal: options.signal,
       stdio: options.capture ? ['ignore', 'pipe', 'inherit'] : 'inherit',
     });
     let output = '';
+    let failure;
 
     child.stdout?.on('data', (chunk) => {
       output += chunk;
     });
-    child.on('error', reject);
-    child.on('exit', code => code === 0
-      ? resolve(output)
-      : reject(new Error(`${invocation.command} exited with code ${code}.`)));
+    child.on('error', (error) => {
+      failure = error;
+    });
+
+    // Wait for the aborted child to stop before restoring its OHPM inputs.
+    child.on('close', (code) => {
+      if (failure) reject(failure);
+      else if (code === 0) resolve(output);
+      else reject(new Error(`${invocation.command} exited with code ${code}.`));
+    });
   });
 }
 
-async function publishBuiltHar(project) {
+async function publishBuiltHar(project, dependencies = []) {
   await assertNonEmptyRegularFile(project.sourceOutput, 'Hvigor HAR output', project.projectRoot);
   await assertExistingAncestorInside(project.packageRoot, project.bundledHar, 'Bundled HAR');
 
-  await fs.promises.mkdir(path.dirname(project.bundledHar), { recursive: true });
+  const versions = Object.fromEntries(dependencies.map(dependency => [
+    dependency.ohPackage.name, dependency.ohPackage.version,
+  ]));
   const temp = `${project.bundledHar}.${process.pid}.${Date.now()}.tmp`;
+
+  await fs.promises.mkdir(path.dirname(project.bundledHar), { recursive: true });
+
   try {
     await fs.promises.copyFile(project.sourceOutput, temp, fs.constants.COPYFILE_EXCL);
-    await sanitizeHarmonyHar(temp);
+    await sanitizeHarmonyHar(temp, {
+      sourceManifest: project.ohPackage,
+      workspaceVersions: versions,
+    });
     await fs.promises.rename(temp, project.bundledHar);
   } finally {
     await fs.promises.rm(temp, { force: true });
@@ -246,21 +288,82 @@ async function publishBuiltHar(project) {
   await assertNonEmptyRegularFile(project.bundledHar, 'Bundled HAR', project.packageRoot);
 }
 
-export async function prepareModule(root = process.cwd(), options = {}) {
-  const project = await loadModuleProject(root);
+async function createWorkspaceBuild(root, options = {}) {
+  root = await fs.promises.realpath(root);
+  const workspace = await findWorkspacePackages(root);
 
-  const task = options.cleanOnly ? 'clean' : 'assembleHar';
-  const install = options.cleanOnly
-    ? undefined
-    : { command: 'ohpm', args: ['install', '--all'], cwd: project.projectRoot };
-  const build = { command: 'hvigorw', args: fixedHvigorArgs(task, project.moduleName), cwd: project.projectRoot };
-  const plan = { ...build, install, build };
+  if (options.all && (!workspace || workspace.root !== root)) {
+    throw new Error('build-workspace must run at a package.json workspace root.');
+  }
+
+  const projects = [];
+  for (const directory of workspace?.packages || [root]) {
+    if (await exists(path.join(directory, OH_PACKAGE_MANIFEST))) {
+      projects.push(await loadModuleProject(directory));
+    }
+  }
+
+  const targets = options.all
+    ? projects.filter(project => !project.packageJson.private)
+    : projects.filter(project => project.packageRoot === root);
+  if (targets.length === 0) throw new Error(`No Harmony module projects found in ${root}.`);
+
+  return planWorkspaceBuild(projects, targets).map(({ project, dependencies }) => {
+    const install = { command: 'ohpm', args: ['install', '--all'], cwd: project.projectRoot };
+    const build = { command: 'hvigorw', args: fixedHvigorArgs('assembleHar', project.moduleName), cwd: project.projectRoot };
+    const clean = options.clean ? { ...build, args: fixedHvigorArgs('clean', project.moduleName) } : undefined;
+    const overrides = workspaceOverrides(project, dependencies);
+
+    return {
+      project,
+      dependencies,
+      plan: { ...build, packageName: project.packageJson.name, install, clean, build, overrides },
+    };
+  });
+}
+
+async function executeWorkspaceBuild(entries) {
+  for (const { project, dependencies, plan } of entries) {
+    process.stdout.write(`[Harmony] Building ${project.packageJson.name}\n`);
+
+    for (const dependency of dependencies) {
+      await assertNonEmptyRegularFile(dependency.bundledHar, 'Workspace dependency HAR', dependency.packageRoot);
+    }
+
+    await withWorkspaceOverrides(project, plan.overrides, async (signal) => {
+      const options = { cwd: project.projectRoot, signal };
+
+      await spawnCommand(plan.install.command, plan.install.args, options);
+      if (plan.clean) await spawnCommand(plan.clean.command, plan.clean.args, options);
+      await spawnCommand(plan.build.command, plan.build.args, options);
+
+      await publishBuiltHar(project, dependencies);
+    });
+  }
+}
+
+export async function buildWorkspace(root = process.cwd(), options = {}) {
+  const entries = await createWorkspaceBuild(root, { all: true });
+  if (!options.dryRun) await executeWorkspaceBuild(entries);
+  return { builds: entries.map(entry => entry.plan) };
+}
+
+export async function prepareModule(root = process.cwd(), options = {}) {
+  if (!options.cleanOnly) {
+    const entries = await createWorkspaceBuild(root);
+
+    if (!options.dryRun) await executeWorkspaceBuild(entries);
+
+    return { ...entries.at(-1).plan, workspaceBuilds: entries.map(entry => entry.plan) };
+  }
+
+  const project = await loadModuleProject(root);
+  const build = { command: 'hvigorw', args: fixedHvigorArgs('clean', project.moduleName), cwd: project.projectRoot };
+  const plan = { ...build, build };
 
   if (options.dryRun) return plan;
 
-  if (install) await spawnCommand(install.command, install.args, { cwd: install.cwd });
   await spawnCommand(build.command, build.args, { cwd: build.cwd });
-  if (!options.cleanOnly) await publishBuiltHar(project);
 
   return plan;
 }
@@ -299,20 +402,19 @@ function packageFile(value, field) {
 
 export async function prepackModule(root = process.cwd(), options = {}) {
   const project = await loadModuleProject(root);
+  const entries = await createWorkspaceBuild(root, { clean: true });
 
   const plan = {
     clean: { command: 'hvigorw', args: fixedHvigorArgs('clean', project.moduleName) },
     install: { command: 'ohpm', args: ['install', '--all'] },
     build: { command: 'hvigorw', args: fixedHvigorArgs('assembleHar', project.moduleName) },
     pack: { command: 'npm', args: ['pack', '--dry-run', '--json', '--ignore-scripts'] },
+    workspaceBuilds: entries.map(entry => entry.plan),
   };
 
   if (options.dryRun) return plan;
 
-  await spawnCommand(plan.install.command, plan.install.args, { cwd: project.projectRoot });
-  await spawnCommand(plan.clean.command, plan.clean.args, { cwd: project.projectRoot });
-  await spawnCommand(plan.build.command, plan.build.args, { cwd: project.projectRoot });
-  await publishBuiltHar(project);
+  await executeWorkspaceBuild(entries);
 
   const output = await spawnCommand(plan.pack.command, plan.pack.args, { cwd: project.packageRoot, capture: true });
   const result = JSON.parse(output);
@@ -357,7 +459,7 @@ function parseCli(argv) {
 
 export async function runCli(argv) {
   if (argv.length === 0 || argv.includes('--help') || argv.includes('-h')) {
-    process.stdout.write('Usage: expo-harmony-module <inspect|prepare|prepack> [--root <path>] [--json] [--dry-run]\n');
+    process.stdout.write('Usage: expo-harmony-module <inspect|prepare|prepack|build-workspace> [--root <path>] [--json] [--dry-run]\n');
     return;
   }
 
@@ -374,6 +476,7 @@ export async function runCli(argv) {
   if (command === 'inspect') result = await inspectModule(options.root);
   else if (command === 'prepare') result = await prepareModule(options.root, options);
   else if (command === 'prepack') result = await prepackModule(options.root, options);
+  else if (command === 'build-workspace') result = await buildWorkspace(options.root, options);
   else throw new TypeError(`Unknown command: ${command}`);
 
   if (options.json || options.dryRun || command === 'inspect') {

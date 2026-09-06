@@ -1853,7 +1853,9 @@ __metadata:
   resolution: "@expo-harmony/expo-module-scripts@workspace:packages/expo-module-scripts"
   dependencies:
     "@expo-harmony/expo-modules-autolinking": "workspace:*"
+    fast-glob: "npm:^3.3.2"
     json5: "npm:2.2.3"
+    semver: "npm:7.7.3"
     tar: "npm:6.2.1"
   bin:
     expo-harmony-module: bin/expo-harmony-module.js
@@ -1886,6 +1888,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@expo-harmony/expo-modules-core@workspace:packages/expo-modules-core"
   dependencies:
+    "@expo-harmony/expo-module-scripts": "workspace:*"
     "@react-native-oh/react-native-harmony": "npm:0.84.1"
     "@react-native-ohos/react-native-worklets": "npm:1.0.0"
     expo-modules-core: "npm:55.0.25"

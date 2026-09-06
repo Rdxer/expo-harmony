@@ -24,7 +24,9 @@
   },
   "dependencies": {
     "@expo-harmony/expo-modules-autolinking": "workspace:*",
+    "fast-glob": "^3.3.2",
     "json5": "2.2.3",
+    "semver": "7.7.3",
     "tar": "6.2.1"
   },
   "engines": {

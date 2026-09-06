@@ -24,6 +24,8 @@
 
 `enableBackgroundPlayback` 默认为 `true`，`enableBackgroundRecording` 默认为 `false`。Config Plugin 默认配置麦克风权限，并仅在启用相应后台能力时添加 HarmonyOS 连续任务权限和 Ability 后台模式；仅使用前台播放时可以将两个选项都设为 `false`。
 
+可通过 `microphonePermission: "允许应用录制音频"` 自定义麦克风权限说明。插件会将文案写入 entry 模块的字符串资源，并在 `module.json5` 中使用资源引用；也支持直接传入已有的 `$string:资源名` 或构建占位符。将 `microphonePermission` 或 `recordAudioAndroid` 设为 `false` 可移除麦克风权限。
+
 受 HarmonyOS Media Kit 能力限制，当前不支持 PCM 音频采样和关闭变调校正，录音格式仅支持 M4A（AAC）和 MP3；播放列表切换也不保证无缝衔接。调用不受支持的能力会抛出错误。
 
 ## Author

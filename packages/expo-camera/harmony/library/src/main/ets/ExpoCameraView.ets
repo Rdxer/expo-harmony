@@ -395,6 +395,8 @@ export class ExpoCameraViewState extends ExpoView {
   private recording: boolean = false;
   private recordingStarting: boolean = false;
   private recordingStartCancelled: boolean = false;
+  private recordingInitialization?: Promise<void>;
+  private recordingFinish?: Promise<void>;
   private finishing: boolean = false;
   private barcodeWarningShown: boolean = false;
   private shutterWarningShown: boolean = false;
@@ -475,6 +477,7 @@ export class ExpoCameraViewState extends ExpoView {
   }
 
   detachSurface(): void {
+    this.cancelRecordingStart();
     this.surfaceId = undefined;
     this.ready = false;
     this.setTorch(false);
@@ -590,6 +593,7 @@ export class ExpoCameraViewState extends ExpoView {
       prev.active !== this.props.active;
 
     if (reload) {
+      this.cancelRecordingStart();
       if (this.recording) {
         void this.finishRecording(true);
       } else {
@@ -640,6 +644,7 @@ export class ExpoCameraViewState extends ExpoView {
   destroy(): void {
     if (this.destroyed) return;
 
+    this.cancelRecordingStart();
     this.destroyed = true;
     this.ready = false;
     this.setTorch(false);
@@ -662,6 +667,7 @@ export class ExpoCameraViewState extends ExpoView {
   onBackground(): void {
     if (this.destroyed || this.backgrounded) return;
 
+    this.cancelRecordingStart();
     this.backgrounded = true;
     this.ready = false;
     this.setTorch(false);
@@ -1252,9 +1258,7 @@ export class ExpoCameraViewState extends ExpoView {
       }
 
       await this.awaitReady();
-      if (this.recordingStartCancelled) {
-        throw new ExpoCameraError('ERR_CAMERA_RECORDING_CANCELLED', 'Video recording was cancelled before it started.');
-      }
+      this.assertRecordingStart(this.pipelineGeneration);
 
       const result: Promise<ESObject> = new Promise<ESObject>(
         (resolve: (value: ESObject) => void, reject: (error: ExpoCameraError) => void): void => {
@@ -1264,21 +1268,13 @@ export class ExpoCameraViewState extends ExpoView {
       );
 
       this.recording = true;
+      this.recordingInitialization = this.prepareVideoRecording(options);
       try {
-        await this.releasePipeline();
-        await this.initializeVideoRecording(options);
-      } catch (error) {
-        const detail = String(error).replace(/^(?:Error:\s*)+/, '');
-        const reject = this.rejectRecording;
-
-        this.resolveRecording = undefined;
-        this.rejectRecording = undefined;
-        this.recording = false;
-        await this.releasePipeline();
-        this.scheduleReconfigure();
-
-        console.error(`Expo Camera recording could not start: ${detail}`);
-        reject?.(new ExpoCameraError('ERR_CAMERA_RECORDING_START', 'Video recording could not start.'));
+        await this.recordingInitialization;
+      } catch (_) {
+        await this.finishRecording(true);
+      } finally {
+        this.recordingInitialization = undefined;
       }
 
       return await result;
@@ -1287,7 +1283,25 @@ export class ExpoCameraViewState extends ExpoView {
     }
   }
 
+  private cancelRecordingStart(): void {
+    if (this.recordingStarting) this.recordingStartCancelled = true;
+  }
+
+  private assertRecordingStart(generation: number): void {
+    if (this.recordingStartCancelled) {
+      throw new ExpoCameraError('ERR_CAMERA_RECORDING_CANCELLED', 'Video recording was cancelled before it started.');
+    }
+    this.assertPipelineGeneration(generation);
+  }
+
+  private async prepareVideoRecording(options: RecordingOptions): Promise<void> {
+    await this.releasePipeline();
+    await this.initializeVideoRecording(options);
+  }
+
   private async initializeVideoRecording(options: RecordingOptions): Promise<void> {
+    const generation = this.pipelineGeneration;
+    this.assertRecordingStart(generation);
     const surface = this.surfaceId;
     if (surface === undefined) throw new ExpoCameraError('ERR_CAMERA_NOT_READY', 'The camera preview surface is unavailable.');
 
@@ -1299,6 +1313,7 @@ export class ExpoCameraViewState extends ExpoView {
 
     const dir = `${this.context.rnComponentContext.uiAbilityContext.cacheDir}/expo-camera`;
     await ensureDirectory(dir);
+    this.assertRecordingStart(generation);
     const path = uniquePath(dir, 'video', 'mp4', this.tag);
     const file = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
 
@@ -1307,8 +1322,10 @@ export class ExpoCameraViewState extends ExpoView {
 
     const recorder = await media.createAVRecorder();
     this.recorder = recorder;
+    this.assertRecordingStart(generation);
 
     const encoders = await recorder.getAvailableEncoder();
+    this.assertRecordingStart(generation);
     const supportsAvc = encoders.some(
       (encoder: media.EncoderInfo): boolean => encoder.type === 'video' && encoder.mimeType === media.CodecMimeType.VIDEO_AVC,
     );
@@ -1352,25 +1369,28 @@ export class ExpoCameraViewState extends ExpoView {
     }
 
     await recorder.prepare(config);
+    this.assertRecordingStart(generation);
     const inputSurface = await recorder.getInputSurface();
+    this.assertRecordingStart(generation);
     const input = this.manager.createCameraInput(device);
+    this.device = device;
+    this.input = input;
     await input.open();
+    this.assertRecordingStart(generation);
 
     const previewOut = this.manager.createPreviewOutput(preview, surface);
+    this.previewOutput = previewOut;
     const videoOut = this.manager.createVideoOutput(video, inputSurface);
+    this.videoOutput = videoOut;
     const session = this.manager.createSession<camera.VideoSession>(camera.SceneMode.NORMAL_VIDEO);
+    this.session = session;
     session.beginConfig();
     session.addInput(input);
     session.addOutput(previewOut);
     session.addOutput(videoOut);
     await session.commitConfig();
+    this.assertRecordingStart(generation);
     session.on('error', this.onSessionError);
-
-    this.device = device;
-    this.input = input;
-    this.previewOutput = previewOut;
-    this.videoOutput = videoOut;
-    this.session = session;
 
     this.applyControls();
     this.applyVideoStabilization(session);
@@ -1390,6 +1410,7 @@ export class ExpoCameraViewState extends ExpoView {
     } catch (error) {
       console.warn(`Expo Camera could not configure video rotation: ${String(error)}`);
     }
+    this.assertRecordingStart(generation);
 
     recorder.on('stateChange', (state: media.AVRecorderState, _: media.StateChangeReason): void => {
       if (state === 'stopped' && this.recording && !this.finishing) void this.finishRecording(false);
@@ -1402,8 +1423,11 @@ export class ExpoCameraViewState extends ExpoView {
     });
 
     await session.start();
+    this.assertRecordingStart(generation);
     await videoOut.start();
+    this.assertRecordingStart(generation);
     await recorder.start();
+    this.assertRecordingStart(generation);
 
     this.ready = true;
     this.resolveReadyWaiters();
@@ -1467,18 +1491,41 @@ export class ExpoCameraViewState extends ExpoView {
   }
 
   private async stopRecording(): Promise<ESObject> {
-    if (this.recordingStarting && !this.recording) {
-      this.recordingStartCancelled = true;
-      return null;
-    }
+    this.cancelRecordingStart();
     if (this.recording) await this.finishRecording(true);
     return null;
   }
 
-  private async finishRecording(stopRecorder: boolean): Promise<void> {
-    if (!this.recording || this.finishing) return;
+  private finishRecording(stopRecorder: boolean, error?: ExpoCameraError): Promise<void> {
+    if (this.recordingFinish !== undefined) return this.recordingFinish;
+    if (!this.recording) return Promise.resolve();
 
     this.finishing = true;
+    this.cancelRecordingStart();
+    this.recordingFinish = this.completeRecording(stopRecorder, error);
+    return this.recordingFinish;
+  }
+
+  private async completeRecording(stopRecorder: boolean, error?: ExpoCameraError): Promise<void> {
+    let failure = error;
+    // Initialization owns the resources until its current native operation settles.
+    // Keep recording true through cleanup so preview reconfiguration cannot overlap it.
+    try {
+      await this.recordingInitialization;
+    } catch (initializationError) {
+      if (failure === undefined) {
+        if (
+          initializationError instanceof ExpoCameraError &&
+          (initializationError.code === 'ERR_CAMERA_RECORDING_CANCELLED' || initializationError.code === 'ERR_CAMERA_INITIALIZATION_CANCELLED')
+        ) {
+          failure = new ExpoCameraError('ERR_CAMERA_RECORDING_CANCELLED', 'Video recording was cancelled before it started.');
+        } else {
+          console.error(`Expo Camera recording could not start: ${String(initializationError)}`);
+          failure = new ExpoCameraError('ERR_CAMERA_RECORDING_START', 'Video recording could not start.');
+        }
+      }
+    }
+
     this.clearRecordingLimits();
     const path = this.recordingPath;
 
@@ -1492,40 +1539,33 @@ export class ExpoCameraViewState extends ExpoView {
           await this.videoOutput.stop();
         } catch (_) {}
       }
-
-      await this.releasePipeline();
-      this.recording = false;
-      this.finishing = false;
-
-      if (path === undefined) throw new ExpoCameraError('ERR_CAMERA_RECORDING_FILE', 'The video recorder did not create an output file.');
-
-      const resolve = this.resolveRecording;
-      this.resolveRecording = undefined;
-      this.rejectRecording = undefined;
-      resolve?.(new VideoResult(`file://${path}`));
-
-      if (!this.destroyed) this.scheduleReconfigure();
     } catch (error) {
       console.error(`Expo Camera recording could not stop: ${String(error)}`);
-
-      this.finishing = false;
-      await this.failRecording(new ExpoCameraError('ERR_CAMERA_RECORDING_STOP', 'Video recording could not stop cleanly.'));
+      failure = failure ?? new ExpoCameraError('ERR_CAMERA_RECORDING_STOP', 'Video recording could not stop cleanly.');
     }
-  }
-
-  private async failRecording(error: ExpoCameraError): Promise<void> {
-    this.clearRecordingLimits();
-    const reject = this.rejectRecording;
-
-    this.resolveRecording = undefined;
-    this.rejectRecording = undefined;
-    this.recording = false;
-    this.finishing = false;
 
     await this.releasePipeline();
+    const resolve = this.resolveRecording;
+    const reject = this.rejectRecording;
+    this.resolveRecording = undefined;
+    this.rejectRecording = undefined;
+    this.recordingPath = undefined;
+    this.recording = false;
+    this.finishing = false;
+    this.recordingFinish = undefined;
 
-    reject?.(error);
+    if (failure !== undefined) {
+      reject?.(failure);
+    } else if (path === undefined) {
+      reject?.(new ExpoCameraError('ERR_CAMERA_RECORDING_FILE', 'The video recorder did not create an output file.'));
+    } else {
+      resolve?.(new VideoResult(`file://${path}`));
+    }
     if (!this.destroyed) this.scheduleReconfigure();
+  }
+
+  private failRecording(error: ExpoCameraError): Promise<void> {
+    return this.finishRecording(true, error);
   }
 
   private resumeDurationTimer(): void {
@@ -1641,7 +1681,11 @@ export class ExpoCameraViewState extends ExpoView {
     if (this.recorder !== undefined) {
       try {
         this.recorder.off('stateChange');
+      } catch (_) {}
+      try {
         this.recorder.off('error');
+      } catch (_) {}
+      try {
         await this.recorder.release();
       } catch (_) {}
     }

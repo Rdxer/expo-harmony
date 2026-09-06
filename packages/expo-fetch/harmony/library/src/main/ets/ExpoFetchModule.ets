@@ -460,18 +460,21 @@ class ExpoFetchRuntime {
         },
       },
     };
-    session.fetch(attempt.request).then((response: rcp.Response): void => {
-      if (attempt.discarded || task.completed) return;
-      // Also handle responses completed before their event callbacks run.
-      attempt.receiveStatus(response.statusCode);
-      attempt.receiveHeaders(headerPairs(response.headers));
-      attempt.ended = true;
-      if (attempt.accepted) this.finishAttempt(task);
-    }).catch((error: Object): void => {
-      // Closing a redirect's session must not fail the next request.
-      if (attempt.discarded || task.completed) return;
-      this.failTask(task, asFetchError(error));
-    });
+    session
+      .fetch(attempt.request)
+      .then((response: rcp.Response): void => {
+        if (attempt.discarded || task.completed) return;
+        // Also handle responses completed before their event callbacks run.
+        attempt.receiveStatus(response.statusCode);
+        attempt.receiveHeaders(headerPairs(response.headers));
+        attempt.ended = true;
+        if (attempt.accepted) this.finishAttempt(task);
+      })
+      .catch((error: Object): void => {
+        // Closing a redirect's session must not fail the next request.
+        if (attempt.discarded || task.completed) return;
+        this.failTask(task, asFetchError(error));
+      });
   }
 
   private receiveChunk(task: FetchTask, values: ArrayBuffer): void {

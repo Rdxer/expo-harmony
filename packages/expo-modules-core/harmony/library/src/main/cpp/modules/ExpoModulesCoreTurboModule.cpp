@@ -166,6 +166,9 @@ ExpoModulesCoreTurboModule::~ExpoModulesCoreTurboModule() noexcept {
 std::shared_ptr<RuntimeContext> ExpoModulesCoreTurboModule::runtimeContext(
     jsi::Runtime &runtime) {
   std::scoped_lock lock(contextsMutex_);
+  if (isDestroyScheduled()) {
+    throw CodedError("ERR_RUNTIME_DESTROYED", "Expo Modules Core is being destroyed.");
+  }
   auto iterator = contexts_.find(&runtime);
   if (iterator != contexts_.end()) {
     if (auto existing = iterator->second.lock()) {
@@ -211,6 +214,9 @@ void ExpoModulesCoreTurboModule::registerRuntimeContext(
         "Cannot register an Expo RuntimeContext that is being destroyed.");
   }
   std::scoped_lock lock(contextsMutex_);
+  if (isDestroyScheduled()) {
+    throw CodedError("ERR_RUNTIME_DESTROYED", "Expo Modules Core is being destroyed.");
+  }
   contexts_[&runtime] = context;
 }
 
@@ -364,6 +370,84 @@ void ExpoModulesCoreTurboModule::postMessageToArkTS(
   instance->postMessageToArkTS(name, payload);
 }
 
+void ExpoModulesCoreTurboModule::beginDestroy(std::string destroyRequestId) {
+  bool expected = false;
+  if (!destroyScheduled_.compare_exchange_strong(
+          expected,
+          true,
+          std::memory_order_acq_rel,
+          std::memory_order_acquire)) {
+    return;
+  }
+  std::vector<std::shared_ptr<RuntimeContext>> contexts;
+  {
+    std::scoped_lock lock(contextsMutex_);
+    for (auto iterator = contexts_.begin(); iterator != contexts_.end();) {
+      auto context = iterator->second.lock();
+      if (!context || !context->isAlive()) {
+        iterator = contexts_.erase(iterator);
+        continue;
+      }
+      contexts.push_back(context);
+      ++iterator;
+    }
+  }
+  auto acknowledgeDestroy =
+      [mainJSInvoker = jsInvoker_,
+       safeInstance = safeInstance_,
+       requestId = std::move(destroyRequestId)]() noexcept {
+        if (!mainJSInvoker) {
+          return;
+        }
+        try {
+          mainJSInvoker->invokeAsync(
+              [safeInstance,
+               requestId](jsi::Runtime &) noexcept {
+                auto instance = safeInstance.lock();
+                if (instance && !requestId.empty()) {
+                  try {
+                    instance->postMessageToArkTS(
+                        protocol::kLifecycleDestroyAck,
+                        folly::dynamic::object("requestId", requestId));
+                  } catch (const std::exception &error) {
+                    OH_LOG_Print(
+                        LOG_APP,
+                        LOG_ERROR,
+                        kExpoModulesLogDomain,
+                        kExpoModulesLogTag,
+                        "Unable to acknowledge Expo runtime destruction: %{public}s",
+                        error.what());
+                  } catch (...) {
+                    OH_LOG_Print(
+                        LOG_APP,
+                        LOG_ERROR,
+                        kExpoModulesLogDomain,
+                        kExpoModulesLogTag,
+                        "Unable to acknowledge Expo runtime destruction");
+                  }
+                }
+              });
+        } catch (...) {
+          OH_LOG_Print(
+              LOG_APP,
+              LOG_ERROR,
+              kExpoModulesLogDomain,
+              kExpoModulesLogTag,
+              "Unable to schedule Expo runtime destruction acknowledgement");
+        }
+      };
+  if (contexts.empty()) {
+    acknowledgeDestroy();
+    return;
+  }
+  auto barrier = InvalidationBarrier::create(
+      contexts.size(), std::move(acknowledgeDestroy));
+  // Close the View gate before asynchronous teardown.
+  for (const auto &context : contexts) {
+    context->invalidate([barrier] { barrier->arrive(); });
+  }
+}
+
 void ExpoModulesCoreTurboModule::onMessageReceived(
     const rnoh::ArkTSMessage &message) {
   if (message.name == protocol::kViewEvent && message.payload.isObject()) {
@@ -483,99 +567,6 @@ void ExpoModulesCoreTurboModule::onMessageReceived(
           componentName.c_str(),
           static_cast<long long>(tag),
           phase.c_str());
-    }
-    return;
-  }
-  if (message.name == protocol::kLifecycleEvent && message.payload.isObject()) {
-    const auto encodedEventName = message.payload.getDefault("eventName", "");
-    if (!encodedEventName.isString()) {
-      return;
-    }
-    if (encodedEventName.asString() != protocol::kLifecycleDestroy) {
-      return;
-    }
-    auto payload = message.payload.getDefault("payload", nullptr);
-    std::string destroyRequestId;
-    if (payload.isObject()) {
-      const auto requestId = payload.getDefault("requestId", "");
-      if (requestId.isString()) {
-        destroyRequestId = requestId.asString();
-      }
-    }
-    bool expected = false;
-    if (!destroyScheduled_.compare_exchange_strong(
-            expected,
-            true,
-            std::memory_order_acq_rel,
-            std::memory_order_acquire)) {
-      return;
-    }
-    std::vector<std::shared_ptr<RuntimeContext>> contexts;
-    {
-      std::scoped_lock lock(contextsMutex_);
-      for (auto iterator = contexts_.begin(); iterator != contexts_.end();) {
-        auto context = iterator->second.lock();
-        if (!context || !context->isAlive()) {
-          iterator = contexts_.erase(iterator);
-          continue;
-        }
-        contexts.push_back(context);
-        ++iterator;
-      }
-    }
-    auto acknowledgeDestroy =
-        [mainJSInvoker = jsInvoker_,
-         safeInstance = safeInstance_,
-         requestId = std::move(destroyRequestId)]() noexcept {
-          if (!mainJSInvoker) {
-            return;
-          }
-          try {
-            mainJSInvoker->invokeAsync(
-                [safeInstance,
-                 requestId](jsi::Runtime &) noexcept {
-                  auto instance = safeInstance.lock();
-                  if (instance && !requestId.empty()) {
-                    try {
-                      instance->postMessageToArkTS(
-                          protocol::kLifecycleDestroyAck,
-                          folly::dynamic::object("requestId", requestId));
-                    } catch (const std::exception &error) {
-                      OH_LOG_Print(
-                          LOG_APP,
-                          LOG_ERROR,
-                          kExpoModulesLogDomain,
-                          kExpoModulesLogTag,
-                          "Unable to acknowledge Expo runtime destruction: %{public}s",
-                          error.what());
-                    } catch (...) {
-                      OH_LOG_Print(
-                          LOG_APP,
-                          LOG_ERROR,
-                          kExpoModulesLogDomain,
-                          kExpoModulesLogTag,
-                          "Unable to acknowledge Expo runtime destruction");
-                    }
-                  }
-                });
-          } catch (...) {
-            OH_LOG_Print(
-                LOG_APP,
-                LOG_ERROR,
-                kExpoModulesLogDomain,
-                kExpoModulesLogTag,
-                "Unable to schedule Expo runtime destruction acknowledgement");
-          }
-        };
-    if (contexts.empty()) {
-      acknowledgeDestroy();
-      return;
-    }
-    auto barrier = InvalidationBarrier::create(
-        contexts.size(), std::move(acknowledgeDestroy));
-    // Close the View gate before asynchronous teardown.
-    for (const auto &context : contexts) {
-      context->invalidate([barrier] { barrier->arrive(); });
     }
     return;
   }

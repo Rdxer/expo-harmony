@@ -29,6 +29,8 @@ public:
       const rnoh::ComponentInstance::Context &context) override;
 
   rnoh::EventEmitRequestHandlers createEventEmitRequestHandlers() override;
+
+  std::vector<rnoh::ArkTSMessageHandler::Shared> createArkTSMessageHandlers() override;
 };
 
 }  // namespace expo::harmony

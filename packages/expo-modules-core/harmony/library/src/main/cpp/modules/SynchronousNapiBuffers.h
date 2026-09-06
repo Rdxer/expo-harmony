@@ -28,16 +28,20 @@ public:
       throw std::runtime_error("Could not open the synchronous binary handle scope.");
     }
   }
+
   ~SynchronousNapiBuffers() {
     detach();
     napi_close_handle_scope(env_, scope_);
   }
+
   SynchronousNapiBuffers(const SynchronousNapiBuffers &) = delete;
   SynchronousNapiBuffers &operator=(const SynchronousNapiBuffers &) = delete;
 
   napi_value get(const std::shared_ptr<SynchronousBinarySnapshot> &snapshot) {
     const auto found = buffers_.find(snapshot.get());
-    if (found != buffers_.end()) return found->second.value;
+    if (found != buffers_.end()) {
+      return found->second.value;
+    }
 
     napi_value buffer = nullptr;
     napi_status status;
@@ -46,11 +50,14 @@ public:
       // handle or a pointer owned by the JS runtime.
       auto owner = std::make_unique<std::shared_ptr<SynchronousBinarySnapshot>>(snapshot);
       status = napi_create_external_arraybuffer(
-          env_, snapshot->bytes.data(), snapshot->bytes.size(),
-          [](napi_env, void *, void *hint) {
+          env_, snapshot->bytes.data(), snapshot->bytes.size(), [](napi_env, void *, void *hint) {
             delete static_cast<std::shared_ptr<SynchronousBinarySnapshot> *>(hint);
-          }, owner.get(), &buffer);
-      if (status == napi_ok) owner.release();
+          },
+          owner.get(),
+          &buffer);
+      if (status == napi_ok) {
+        owner.release();
+      }
     } else {
       // Empty buffers need no external allocation; ordinary inputs keep their
       // existing independent-storage and retention semantics.
@@ -71,17 +78,26 @@ public:
   // stale native bytes if ArkTS has changed the buffer's storage.
   napi_status finish() noexcept {
     for (const auto &[snapshot, entry] : buffers_) {
-      if (!entry.writable) continue;
+      if (!entry.writable) {
+        continue;
+      }
       bool detached = false;
       auto status = napi_is_detached_arraybuffer(env_, entry.value, &detached);
-      if (status != napi_ok) return status;
-      if (detached) return napi_generic_failure;
+      if (status != napi_ok) {
+        return status;
+      }
+      if (detached) {
+        return napi_generic_failure;
+      }
       void *data = nullptr;
       size_t length = 0;
       status = napi_get_arraybuffer_info(env_, entry.value, &data, &length);
-      if (status != napi_ok) return status;
-      if (length != snapshot->bytes.size() ||
-          (length > 0 && data != snapshot->bytes.data())) return napi_generic_failure;
+      if (status != napi_ok) {
+        return status;
+      }
+      if (length != snapshot->bytes.size() || (length > 0 && data != snapshot->bytes.data())) {
+        return napi_generic_failure;
+      }
     }
     return detach();
   }
@@ -92,10 +108,15 @@ private:
   napi_status detach() noexcept {
     napi_status result = napi_ok;
     for (auto &[snapshot, entry] : buffers_) {
-      if (!entry.writable) continue;
+      if (!entry.writable) {
+        continue;
+      }
       const auto status = napi_detach_arraybuffer(env_, entry.value);
-      if (status == napi_ok) entry.writable = false;
-      else result = status;
+      if (status == napi_ok) {
+        entry.writable = false;
+      } else {
+        result = status;
+      }
     }
     return result;
   }
@@ -104,9 +125,10 @@ private:
     napi_value value;
     bool writable;
   };
+
   napi_env env_;
   napi_handle_scope scope_ = nullptr;
   std::unordered_map<const SynchronousBinarySnapshot *, Entry> buffers_;
 };
 
-} // namespace expo::harmony
+}  // namespace expo::harmony

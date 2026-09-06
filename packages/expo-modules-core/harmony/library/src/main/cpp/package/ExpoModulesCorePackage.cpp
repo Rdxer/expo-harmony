@@ -10,6 +10,7 @@
 #include <RNOH/ArkJS.h>
 #include <RNOH/EventEmitRequestHandler.h>
 #include <RNOH/MutationsToNapiConverter.h>
+#include <RNOH/RNInstanceInternal.h>
 
 #include <hilog/log.h>
 
@@ -17,6 +18,7 @@
 #include "common/fabric/ExpoViewShadowNode.h"
 #include "fabric/ExpoViewComponentRegistry.h"
 #include "modules/ExpoModulesCoreTurboModule.h"
+#include "runtime/Protocol.h"
 
 namespace expo::harmony {
 
@@ -53,6 +55,43 @@ std::string normalizeEventName(std::string name) {
       std::tolower(static_cast<unsigned char>(name[0])));
   return name;
 }
+
+// Unlike a TurboModule observer, a package handler exists before JS first uses
+// Expo. Route teardown on JS so lazy module creation cannot race installation.
+class ExpoDestroyMessageHandler final : public rnoh::ArkTSMessageHandler {
+public:
+  void handleArkTSMessage(const Context &context) override {
+    if (context.messageName != protocol::kLifecycleEvent || !context.messagePayload.isObject()) {
+      return;
+    }
+    const auto eventName = context.messagePayload.getDefault("eventName", "");
+    const auto payload = context.messagePayload.getDefault("payload", nullptr);
+    if (!eventName.isString() || eventName.asString() != protocol::kLifecycleDestroy || !payload.isObject()) {
+      return;
+    }
+    const auto requestId = payload.getDefault("requestId", "");
+    if (!requestId.isString() || requestId.asString().empty()) {
+      return;
+    }
+    auto instance = std::dynamic_pointer_cast<rnoh::RNInstanceInternal>(context.rnInstance.lock());
+    if (!instance) {
+      return;
+    }
+    // RNOH 0.84 exposes its executor through RNInstanceInternal.
+    instance->getTaskExecutor()->runTask(
+        rnoh::TaskThread::JS,
+        [weakInstance = context.rnInstance, requestId = requestId.asString()] {
+          auto instance = weakInstance.lock();
+          if (!instance) {
+            return;
+          }
+          auto core = instance->getTurboModule<ExpoModulesCoreTurboModule>("ExpoModulesCore");
+          if (core) {
+            core->beginDestroy(requestId);
+          }
+        });
+  }
+};
 
 class ExpoViewEventEmitRequestHandler final
     : public rnoh::EventEmitRequestHandler {
@@ -176,6 +215,11 @@ rnoh::ComponentInstance::Shared ExpoModulesCorePackage::createComponentInstance(
 rnoh::EventEmitRequestHandlers
 ExpoModulesCorePackage::createEventEmitRequestHandlers() {
   return {std::make_shared<ExpoViewEventEmitRequestHandler>()};
+}
+
+std::vector<rnoh::ArkTSMessageHandler::Shared>
+ExpoModulesCorePackage::createArkTSMessageHandlers() {
+  return {std::make_shared<ExpoDestroyMessageHandler>()};
 }
 
 }  // namespace expo::harmony

@@ -36,6 +36,7 @@ public:
       facebook::jsi::Runtime &runtime);
   bool hasRuntimeContext(facebook::jsi::Runtime *runtime);
   bool isDestroyScheduled() const noexcept;
+  void beginDestroy(std::string requestId);
   void registerRuntimeContext(
       facebook::jsi::Runtime &runtime,
       const std::shared_ptr<RuntimeContext> &context);

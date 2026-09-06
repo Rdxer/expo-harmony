@@ -426,9 +426,9 @@ export class ExpoModuleContext {
   get appLifecycleState(): ExpoAppLifecycleState {
     this.assertValid();
     const state = this.coreContext.rnInstance.getLifecycleState();
-    if (state === LifecycleState.READY) return ExpoAppLifecycleState.FOREGROUND;
     if (state === LifecycleState.BEFORE_CREATE) return ExpoAppLifecycleState.BEFORE_CREATE;
-    return ExpoAppLifecycleState.BACKGROUND;
+    // RNOH sets READY after bundle execution even if the Ability is backgrounded.
+    return this.coreContext.getUIAbilityState() === 'FOREGROUND' ? ExpoAppLifecycleState.FOREGROUND : ExpoAppLifecycleState.BACKGROUND;
   }
 
   /** The window that owns the current RN surface. */

@@ -14,10 +14,10 @@ import {
   EXPO_LIFECYCLE_JAVASCRIPT_BUNDLE_LOADED,
 } from './protocol/Protocol';
 import { ensureDirectoryUri } from './appcontext/FileUri';
+import { installRnohDestroyBarrier } from './appcontext/RnohDestroyAdapter';
 
 const DESTROY_ACK_WARNING_MS: number = 5000;
 let nextDestroyRequestId: number = 1;
-const pendingDestroyHandshakes: Map<string, () => void> = new Map();
 
 /** Copy-value platform adapter for the C++ Expo Modules runtime. */
 export class ExpoModulesCoreTurboModule extends EtsUITurboModule {
@@ -25,7 +25,9 @@ export class ExpoModulesCoreTurboModule extends EtsUITurboModule {
   private readonly unsubscribeLifecycle: (() => void)[] = [];
   private readonly coreContext: UITurboModuleContext;
   private readonly modules: ExpoModulesRegistry;
+  private lastAppLifecycleEvent?: string = undefined;
   private destroyStarted: boolean = false;
+  private destroyFinished: boolean = false;
 
   static async create(
     coreContext: UITurboModuleContext,
@@ -74,15 +76,23 @@ export class ExpoModulesCoreTurboModule extends EtsUITurboModule {
     this.unsubscribeLifecycle.push(
       coreContext.rnInstance.subscribeToLifecycleEvents('FOREGROUND', () => this.dispatchExpoModuleLifecycle(EXPO_LIFECYCLE_FOREGROUND)),
       coreContext.rnInstance.subscribeToLifecycleEvents('BACKGROUND', () => this.dispatchExpoModuleLifecycle(EXPO_LIFECYCLE_BACKGROUND)),
-      coreContext.rnInstance.subscribeToLifecycleEvents('JS_BUNDLE_EXECUTION_FINISH', () =>
-        this.dispatchExpoModuleLifecycle(EXPO_LIFECYCLE_JAVASCRIPT_BUNDLE_LOADED, readJavaScriptBundleDurationSeconds(coreContext)),
-      ),
+      coreContext.rnInstance.subscribeToLifecycleEvents('JS_BUNDLE_EXECUTION_FINISH', (): void => {
+        if (this.destroyStarted) return;
+        this.dispatchExpoModuleLifecycle(EXPO_LIFECYCLE_JAVASCRIPT_BUNDLE_LOADED, readJavaScriptBundleDurationSeconds(coreContext));
+        // RNOH drops foreground/background events while BEFORE_CREATE and only
+        // emits bundle completion when it becomes READY. Replay the Ability's
+        // current state, since the bundle may have finished in the background.
+        this.dispatchExpoModuleLifecycle(coreContext.getUIAbilityState() === 'FOREGROUND' ? EXPO_LIFECYCLE_FOREGROUND : EXPO_LIFECYCLE_BACKGROUND);
+      }),
       coreContext.rnInstance.cppEventEmitter.subscribe(EXPO_CONTENT_APPEARED, (payload: ESObject): void => {
+        if (this.destroyStarted) return;
         const runtimeEpoch: ESObject = payload?.runtimeEpoch;
         if (typeof runtimeEpoch !== 'string') return;
         this.modules.dispatchLifecycleForRuntime(runtimeEpoch, EXPO_LIFECYCLE_CONTENT_APPEARED);
       }),
     );
+
+    installRnohDestroyBarrier(coreContext.rnInstance, (): Promise<void> => this.prepareForDestroy());
   }
 
   bindExpoModuleRuntime(runtimeEpoch: string): void {
@@ -269,9 +279,10 @@ export class ExpoModulesCoreTurboModule extends EtsUITurboModule {
   }
 
   override __onDestroy__(): void {
-    if (this.destroyStarted) return;
+    if (this.destroyFinished) return;
 
     this.destroyStarted = true;
+    this.destroyFinished = true;
 
     try {
       ExpoViewAdapterRegistry.destroyInstance(this.coreContext.rnInstance.getId());
@@ -289,83 +300,62 @@ export class ExpoModulesCoreTurboModule extends EtsUITurboModule {
     });
 
     try {
-      this.beginNativeDestroyHandshake();
+      this.modules.invalidate();
     } catch (error) {
-      reportDestroyFailure('native lifecycle handshake', error);
+      reportDestroyFailure('ArkTS Expo modules', error);
     }
   }
 
-  private beginNativeDestroyHandshake(): void {
+  private async prepareForDestroy(): Promise<void> {
+    if (this.destroyFinished) return;
+    this.destroyStarted = true;
+    // RNOH must retain its native instance and JS executor through the ACK.
+    // The owning destruction promise retains this Host without a global map.
+    await this.beginNativeDestroyHandshake();
+    this.__onDestroy__();
+  }
+
+  private async beginNativeDestroyHandshake(): Promise<void> {
     const requestId = `${this.coreContext.rnInstance.getId()}:${Date.now()}:${nextDestroyRequestId++}`;
-    const modules = this.modules;
-    let settled: boolean = false;
     let warningTimer: number = -1;
-    let unsubscribeAck: (() => void) | undefined = undefined;
+    let unsubscribeAck: () => void = (): void => {};
 
-    const finish = (): void => {
-      if (settled) return;
-      settled = true;
-      pendingDestroyHandshakes.delete(requestId);
+    try {
+      await new Promise<void>((resolve: () => void): void => {
+        unsubscribeAck = this.coreContext.rnInstance.cppEventEmitter.subscribe(EXPO_LIFECYCLE_DESTROY_ACK, (payload: ESObject): void => {
+          if (payload?.requestId === requestId) resolve();
+        });
 
+        warningTimer = setTimeout((): void => {
+          warningTimer = -1;
+          reportDestroyFailure(
+            'native lifecycle acknowledgement',
+            new Error(
+              `Still waiting after ${DESTROY_ACK_WARNING_MS}ms for ${requestId}; RNOH destruction is paused until native invalidation completes.`,
+            ),
+          );
+        }, DESTROY_ACK_WARNING_MS);
+
+        this.postLifecycleEvent(EXPO_LIFECYCLE_DESTROY, { requestId });
+      });
+    } finally {
       if (warningTimer >= 0) {
         clearTimeout(warningTimer);
-        warningTimer = -1;
       }
-
-      if (unsubscribeAck !== undefined) {
-        try {
-          unsubscribeAck();
-        } catch (error) {
-          reportDestroyFailure('native lifecycle acknowledgement subscription', error);
-        }
-        unsubscribeAck = undefined;
-      }
-
       try {
-        modules.invalidate();
+        unsubscribeAck();
       } catch (error) {
-        reportDestroyFailure('ArkTS Expo modules', error);
+        reportDestroyFailure('native lifecycle acknowledgement subscription', error);
       }
-    };
-
-    // Keep the scope alive until the native reply.
-    try {
-      pendingDestroyHandshakes.set(requestId, finish);
-    } catch (error) {
-      reportDestroyFailure('native lifecycle handshake retention', error);
-    }
-
-    try {
-      unsubscribeAck = this.coreContext.rnInstance.cppEventEmitter.subscribe(EXPO_LIFECYCLE_DESTROY_ACK, (payload: ESObject): void => {
-        if (payload?.requestId !== requestId) return;
-        finish();
-      });
-    } catch (error) {
-      reportDestroyFailure('native lifecycle acknowledgement subscription', error);
-    }
-
-    try {
-      warningTimer = setTimeout((): void => {
-        reportDestroyFailure(
-          'native lifecycle acknowledgement',
-          new Error(
-            `Still waiting after ${DESTROY_ACK_WARNING_MS}ms for ${requestId}; the ArkTS scope remains retained until native invalidation completes.`,
-          ),
-        );
-        warningTimer = -1;
-      }, DESTROY_ACK_WARNING_MS);
-    } catch (error) {
-      reportDestroyFailure('native lifecycle acknowledgement timeout', error);
-    }
-
-    try {
-      this.postLifecycleEvent(EXPO_LIFECYCLE_DESTROY, { requestId });
-    } catch (error) {
-      reportDestroyFailure('native lifecycle', error);
     }
   }
 
   postLifecycleEvent(eventName: string, payload?: ESObject): void {
+    if (this.destroyStarted && eventName !== EXPO_LIFECYCLE_DESTROY) return;
+    if (eventName === EXPO_LIFECYCLE_FOREGROUND || eventName === EXPO_LIFECYCLE_BACKGROUND) {
+      if (this.lastAppLifecycleEvent === eventName) return;
+      this.lastAppLifecycleEvent = eventName;
+    }
     // DESTROY is owned by the native invalidation handshake.
     if (eventName !== EXPO_LIFECYCLE_DESTROY && !this.modules.dispatchLifecycle(eventName, payload)) {
       return;

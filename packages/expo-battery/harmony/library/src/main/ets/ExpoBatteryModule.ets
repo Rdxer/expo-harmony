@@ -117,6 +117,7 @@ export class ExpoBatteryModule extends ExpoModule {
     if (this.destroyed) return;
     this.requireEventName(name);
     this.events.add(name);
+    this.primeSnapshot(name);
     this.retryQuarantinedUnsubscriptions();
     this.startSystemObservation();
   }
@@ -140,7 +141,6 @@ export class ExpoBatteryModule extends ExpoModule {
       });
       created = subscriber;
       this.subscriber = subscriber;
-      this.primeSnapshots();
 
       commonEventManager.subscribe(subscriber, (error: BusinessError, data: commonEventManager.CommonEventData): void => {
         if (this.destroyed || this.subscriber !== subscriber) return;
@@ -154,6 +154,11 @@ export class ExpoBatteryModule extends ExpoModule {
         }
         this.handleSystemEvent(data);
       });
+      if (this.subscriber !== subscriber) return;
+      // Reconcile changes missed in the background or while retrying a subscription.
+      this.publishBatteryLevelIfChanged();
+      this.publishBatteryStateIfChanged();
+      this.publishPowerModeIfChanged();
     } catch (error) {
       this.subscriber = undefined;
       if (created !== undefined) this.queueUnsubscribe(created);
@@ -284,19 +289,19 @@ export class ExpoBatteryModule extends ExpoModule {
     }
   }
 
-  private primeSnapshots(): void {
+  private primeSnapshot(name: string): void {
     try {
-      if (this.events.has(BATTERY_LEVEL_EVENT_NAME)) this.lastBatteryLevel = this.readBatteryLevel();
+      if (name === BATTERY_LEVEL_EVENT_NAME) this.lastBatteryLevel = this.readBatteryLevel();
     } catch (error) {
       this.warn(`Unable to initialize the battery level observer: ${String(error)}`);
     }
     try {
-      if (this.events.has(BATTERY_STATE_EVENT_NAME)) this.lastBatteryState = this.readBatteryState();
+      if (name === BATTERY_STATE_EVENT_NAME) this.lastBatteryState = this.readBatteryState();
     } catch (error) {
       this.warn(`Unable to initialize the battery state observer: ${String(error)}`);
     }
     try {
-      if (this.events.has(POWER_MODE_EVENT_NAME)) this.lastLowPowerMode = this.readLowPowerMode();
+      if (name === POWER_MODE_EVENT_NAME) this.lastLowPowerMode = this.readLowPowerMode();
     } catch (error) {
       this.warn(`Unable to initialize the power mode observer: ${String(error)}`);
     }

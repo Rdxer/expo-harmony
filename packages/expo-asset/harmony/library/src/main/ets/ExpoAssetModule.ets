@@ -219,7 +219,7 @@ export class ExpoAssetModule extends ExpoModule {
       );
     }
 
-    this.assertActive();
+    // Register the task even if shutdown happened during creation so it can be cancelled.
     await this.waitForDownload(task, uri);
   }
 

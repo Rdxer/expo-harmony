@@ -10,7 +10,7 @@ import {
   ExpoValueTypes,
 } from '@expo-harmony/expo-modules-core';
 import fs from '@ohos.file.fs';
-import http from '@ohos.net.http';
+import { rcp } from '@kit.RemoteCommunicationKit';
 import util from '@ohos.util';
 import url from '@ohos.url';
 import webview from '@ohos.web.webview';
@@ -19,7 +19,6 @@ import uniformTypeDescriptor from '@ohos.data.uniformTypeDescriptor';
 import { collectRequestHeaders, filePathFromUrl, headersForDecodedResponse, mergeCookieHeaders, requestMethodPolicy } from './FetchHeaderPolicy';
 import { ExpoFetchError } from './ExpoFetchError';
 
-const NETSTACK_RESPONSE_LIMIT_BYTES: number = 100 * 1024 * 1024;
 const EMPTY_BYTES: Uint8Array = new Uint8Array(0);
 
 class FetchInit {
@@ -60,7 +59,7 @@ class StreamPacket {
 }
 
 class FetchTask {
-  request: http.HttpRequest | null;
+  session: rcp.Session | null = null;
   url: string;
   queued: ArrayBuffer[] = [];
   readers: Array<(packet: StreamPacket) => void> = [];
@@ -75,26 +74,26 @@ class FetchTask {
   localFileSize: number = 0;
   activeAttempt: FetchAttempt | null = null;
 
-  constructor(request: http.HttpRequest | null, urlValue: string) {
-    this.request = request;
+  constructor(urlValue: string) {
     this.url = urlValue;
   }
 }
 
 class FetchAttempt {
-  request: http.HttpRequest;
+  request: rcp.Request;
+  status: number = 0;
   headers: string[][] = [];
   chunks: ArrayBuffer[] = [];
-  bufferedBytes: number = 0;
   accepted: boolean = false;
   discarded: boolean = false;
   ended: boolean = false;
   metadataReady: Promise<void>;
   private metadataSettled: boolean = false;
+  private headersReceived: boolean = false;
   private resolveMetadata: () => void = (): void => {};
   private rejectMetadata: (error: Error) => void = (_error: Error): void => {};
 
-  constructor(request: http.HttpRequest) {
+  constructor(request: rcp.Request) {
     this.request = request;
     this.metadataReady = new Promise<void>((resolve: () => void, reject: (error: Error) => void): void => {
       this.resolveMetadata = resolve;
@@ -103,8 +102,28 @@ class FetchAttempt {
     this.metadataReady.catch((_error: Error): void => {});
   }
 
-  settleMetadata(): void {
+  receiveStatus(status: number): void {
     if (this.metadataSettled) return;
+    this.status = status;
+    this.settleMetadata();
+  }
+
+  receiveHeaders(headers: string[][]): void {
+    if (this.metadataSettled) return;
+    this.headers = headers;
+    this.headersReceived = true;
+    this.settleMetadata();
+  }
+
+  private settleMetadata(): void {
+    if (!this.headersReceived || this.status === 0) return;
+    // Informational responses are followed by another status/header pair.
+    if (this.status < 200) {
+      this.status = 0;
+      this.headers = [];
+      this.headersReceived = false;
+      return;
+    }
     this.metadataSettled = true;
     this.resolveMetadata();
   }
@@ -147,7 +166,7 @@ class ExpoFetchRuntime {
       throw new ExpoFetchError('ERR_FETCH_INVALID_URL', `Invalid fetch URL: ${inputUrl}`);
     }
 
-    const task = new FetchTask(http.createHttp(), inputUrl);
+    const task = new FetchTask(inputUrl);
     this.tasks.set(id, task);
 
     let target = inputUrl;
@@ -158,32 +177,20 @@ class ExpoFetchRuntime {
 
     try {
       while (true) {
-        const request = redirects === 0 && task.request !== null ? task.request : http.createHttp();
-        task.request = request;
-
-        const attempt = new FetchAttempt(request);
-        task.activeAttempt = attempt;
-        this.attachAttempt(task, attempt);
-
         const sent = await withStoredCookies(headers, target, init.credentials);
         this.assertTaskActive(task);
 
-        const options: http.HttpRequestOptions = {
-          connectTimeout: 0,
-          header: sent,
-          maxRedirects: 0,
-          maxLimit: NETSTACK_RESPONSE_LIMIT_BYTES,
-          readTimeout: 0,
-        };
-        applyRequestMethod(options, method);
-        if (body !== null) options.extraData = body;
-        else if (requestMethodRequiresBody(method)) options.extraData = new ArrayBuffer(0);
+        const request = new rcp.Request(target, requestMethodPolicy(method).method, sent as rcp.RequestHeaders);
+        if (body !== null) request.content = body;
+        else if (requestMethodRequiresBody(method)) request.content = new ArrayBuffer(0);
 
-        const status = await request.requestInStream(target, options);
-        // NetStack exposes the status only when requestInStream settles. Its
-        // header/data events may already have fired, so keep the bounded
-        // pre-accept buffer until redirect and cookie policy can be applied.
+        const attempt = new FetchAttempt(request);
+        task.activeAttempt = attempt;
+        this.startAttempt(task, attempt);
+        // RCP reports the status and headers before the body finishes. Await
+        // only those events here; the fetch promise owns body completion/errors.
         await attempt.metadataReady;
+        const status = attempt.status;
 
         if (task.error !== null) throw task.error;
         if (init.credentials === 'include') {
@@ -209,7 +216,7 @@ class ExpoFetchRuntime {
           }
 
           attempt.discarded = true;
-          this.destroyRequest(task);
+          this.destroySession(task);
           const next = url.URL.parseURL(location ?? '', target).toString();
           if (!isHttpURL(next)) {
             throw new ExpoFetchError('ERR_FETCH_INVALID_URL', `Invalid redirect URL: ${next}`);
@@ -389,7 +396,7 @@ class ExpoFetchRuntime {
 
   private async startLocalFile(id: string, inputUrl: string, init: FetchInit, requestBody: Uint8Array | null): Promise<FetchResult> {
     const path = filePathFromUrl(inputUrl);
-    const task = new FetchTask(null, inputUrl);
+    const task = new FetchTask(inputUrl);
     task.headers = [['content-type', mimeType(path)]];
     const method = init.method.toUpperCase();
     if (method !== 'GET' && method !== 'HEAD') {
@@ -426,33 +433,44 @@ class ExpoFetchRuntime {
     }
   }
 
-  private attachAttempt(task: FetchTask, attempt: FetchAttempt): void {
-    attempt.request.on('headersReceive', (value: Object): void => {
-      attempt.headers = headerPairs(value);
-      attempt.settleMetadata();
-    });
-    attempt.request.on('dataReceive', (chunk: ArrayBuffer): void => {
+  private startAttempt(task: FetchTask, attempt: FetchAttempt): void {
+    const session = rcp.createSession();
+    task.session = session;
+    attempt.request.configuration = {
+      transfer: {
+        autoRedirect: false,
+        timeout: { connectMs: 0, transferMs: 0 },
+      },
+      tracing: {
+        httpEventsHandler: {
+          onStatusCodeReceive: (status: number): void => {
+            if (attempt.discarded || task.completed) return;
+            attempt.receiveStatus(status);
+          },
+          onHeaderReceive: (headers: rcp.ResponseHeaders): void => {
+            if (attempt.discarded || task.completed) return;
+            attempt.receiveHeaders(headerPairs(headers));
+          },
+          // Supplying onDataReceive also disables RCP's whole-body buffering.
+          onDataReceive: (chunk: ArrayBuffer): void => {
+            if (attempt.discarded || task.completed) return;
+            if (attempt.accepted) this.receiveChunk(task, chunk);
+            else attempt.chunks.push(chunk);
+          },
+        },
+      },
+    };
+    session.fetch(attempt.request).then((response: rcp.Response): void => {
       if (attempt.discarded || task.completed) return;
-      if (attempt.accepted) this.receiveChunk(task, chunk);
-      else {
-        attempt.bufferedBytes += chunk.byteLength;
-        if (attempt.bufferedBytes > NETSTACK_RESPONSE_LIMIT_BYTES) {
-          this.failTask(
-            task,
-            new ExpoFetchError(
-              'ERR_FETCH_RESPONSE_TOO_LARGE',
-              `The response exceeded ${NETSTACK_RESPONSE_LIMIT_BYTES} bytes before it could be streamed`,
-            ),
-          );
-          return;
-        }
-        attempt.chunks.push(chunk);
-      }
-    });
-    attempt.request.on('dataEnd', (): void => {
+      // Also handle responses completed before their event callbacks run.
+      attempt.receiveStatus(response.statusCode);
+      attempt.receiveHeaders(headerPairs(response.headers));
       attempt.ended = true;
-      attempt.settleMetadata();
-      if (attempt.accepted && !attempt.discarded) this.finishAttempt(task);
+      if (attempt.accepted) this.finishAttempt(task);
+    }).catch((error: Object): void => {
+      // Closing a redirect's session must not fail the next request.
+      if (attempt.discarded || task.completed) return;
+      this.failTask(task, asFetchError(error));
     });
   }
 
@@ -477,6 +495,7 @@ class ExpoFetchRuntime {
   private assertTaskActive(task: FetchTask): void {
     this.assertActive();
     if (task.error !== null) throw task.error;
+    if (task.completed) throw new ExpoFetchError('ERR_FETCH_REQUEST_CANCELED', 'Fetch request has been canceled');
   }
 
   private requireTask(id: string): FetchTask {
@@ -522,7 +541,7 @@ class ExpoFetchRuntime {
   private completeTask(task: FetchTask): void {
     if (task.completed) return;
     task.completed = true;
-    this.destroyRequest(task);
+    this.destroySession(task);
 
     while (task.readers.length > 0) {
       const resolve = task.readers.shift();
@@ -547,17 +566,28 @@ class ExpoFetchRuntime {
     this.completeTask(task);
   }
 
-  private destroyRequest(task: FetchTask): void {
-    const request = task.request;
-    task.request = null;
-    if (request === null) return;
+  private destroySession(task: FetchTask): void {
+    const attempt = task.activeAttempt;
+    if (attempt !== null) {
+      attempt.discarded = true;
+      attempt.chunks = [];
+      attempt.failMetadata(task.error ?? new ExpoFetchError('ERR_FETCH_REQUEST_CANCELED', 'Fetch request has been canceled'));
+    }
+    const session = task.session;
+    task.session = null;
+    if (session === null) return;
+    if (attempt !== null && !attempt.ended) {
+      try {
+        session.cancel(attempt.request);
+      } catch (_error) {}
+    }
     try {
-      request.destroy();
+      session.close();
     } catch (_error) {}
   }
 
   private disposeTask(task: FetchTask): void {
-    this.destroyRequest(task);
+    this.destroySession(task);
     this.closeLocalFile(task).catch((_error: Object): void => {});
   }
 }
@@ -976,15 +1006,6 @@ function withoutHeaders(headers: Object, names: string[]): Object {
     }
   });
   return result;
-}
-
-function applyRequestMethod(options: http.HttpRequestOptions, method: string): void {
-  const policy = requestMethodPolicy(method);
-  if (policy.standard) {
-    options.method = policy.method as http.RequestMethod;
-    return;
-  }
-  options.customMethod = policy.method;
 }
 
 const STATUS_TEXT: Map<number, string> = new Map<number, string>([

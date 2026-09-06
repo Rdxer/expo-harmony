@@ -22,25 +22,28 @@ function expoLogicalComponentName(moduleName, viewName) {
 function expoViewPropsRevision(props) {
   const existing = propsRevisions.get(props);
   if (existing !== undefined) return existing;
+
   if (!Number.isSafeInteger(nextPropsRevision)) {
     throw new Error('Expo View props revision identity space was exhausted.');
   }
+
   const revision = nextPropsRevision;
   nextPropsRevision += 1;
   propsRevisions.set(props, revision);
+
   return revision;
 }
 
 function ensureNativeModulesAreInstalled() {
   if (getExpoGlobal()) return;
 
-  const coreModule = ReactNative.TurboModuleRegistry.get('ExpoModulesCore');
-  if (!coreModule || typeof coreModule.installModules !== 'function') {
+  const core = ReactNative.TurboModuleRegistry.get('ExpoModulesCore');
+  if (!core || typeof core.installModules !== 'function') {
     throw new Error('Unable to install Expo modules: ExpoModulesCore.installModules() is unavailable.');
   }
 
   try {
-    coreModule.installModules();
+    core.installModules();
   } catch (error) {
     throw new Error(`Unable to install Expo modules: ${error}`);
   }
@@ -51,35 +54,38 @@ function ensureNativeModulesAreInstalled() {
 }
 
 function requireExpoViewComponent(moduleName, viewName) {
-  const logicalName = expoLogicalComponentName(moduleName, viewName);
-  const appIdentifier = getExpoGlobal()?.__expo_app_identifier__ ?? '';
-  const registryName = appIdentifier ? `${logicalName}_${appIdentifier}` : logicalName;
-  const cached = nativeComponentsCache.get(registryName);
+  const name = expoLogicalComponentName(moduleName, viewName);
+  const appId = getExpoGlobal()?.__expo_app_identifier__ ?? '';
+  const key = appId ? `${name}_${appId}` : name;
+  const cached = nativeComponentsCache.get(key);
   if (cached) return cached;
 
-  const nativeComponent = NativeComponentRegistry.get(registryName, () => {
-    const viewConfig = getExpoGlobal()?.getViewConfig?.(moduleName, viewName);
-    if (!viewConfig) {
+  const component = NativeComponentRegistry.get(key, () => {
+    const config = getExpoGlobal()?.getViewConfig?.(moduleName, viewName);
+    if (!config) {
       throw new Error(`Unable to get the view config for ${viewName ?? 'default view'} from module ${moduleName}.`);
     }
 
     return {
-      ...viewConfig,
+      ...config,
       uiViewClassName: EXPO_VIEW_COMPONENT_NAME,
       validAttributes: {
-        ...viewConfig?.validAttributes,
+        ...config?.validAttributes,
         expoModuleName: true,
         expoViewRevision: true,
         expoViewName: true,
       },
     };
   });
-  nativeComponentsCache.set(registryName, nativeComponent);
-  return nativeComponent;
+
+  nativeComponentsCache.set(key, component);
+
+  return component;
 }
 
 function requireNativeViewManager(moduleName, viewName) {
   ensureNativeModulesAreInstalled();
+
   const ReactNativeComponent = requireExpoViewComponent(moduleName, viewName);
 
   class NativeComponent extends React.PureComponent {
@@ -87,21 +93,31 @@ function requireNativeViewManager(moduleName, viewName) {
 
     nativeRef = React.createRef();
     nativeTag = null;
+    committedPropsRevision = 0;
     nativeComponentName = expoLogicalComponentName(moduleName, viewName);
 
     get nativePropsRevision() {
-      return expoViewPropsRevision(this.props);
+      return this.committedPropsRevision;
     }
 
     componentDidMount() {
+      this.committedPropsRevision = propsRevisions.get(this.props) ?? this.committedPropsRevision;
       this.nativeTag = ReactNative.findNodeHandle(this.nativeRef.current);
+    }
+
+    componentDidUpdate() {
+      this.committedPropsRevision = propsRevisions.get(this.props) ?? this.committedPropsRevision;
+    }
+
+    componentWillUnmount() {
+      this.nativeTag = null;
     }
 
     render() {
       return React.createElement(ReactNativeComponent, {
         ...this.props,
         expoModuleName: moduleName,
-        expoViewRevision: this.nativePropsRevision,
+        expoViewRevision: expoViewPropsRevision(this.props),
         expoViewName: viewName ?? '',
         ref: this.nativeRef,
       });

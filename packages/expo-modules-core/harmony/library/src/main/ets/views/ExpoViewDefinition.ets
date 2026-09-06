@@ -61,6 +61,7 @@ export interface ExpoViewDefinitionRuntime {
 interface ExpoViewPropRegistration<ViewType extends ExpoView> {
   readonly descriptor: ExpoViewPropDescriptor;
   readonly setter: ExpoViewPropSetter<ViewType>;
+  readonly convert: (value: ESObject) => ESObject;
   readonly hasDefaultValue: boolean;
   readonly defaultValue: ESObject;
 }
@@ -220,6 +221,7 @@ class MountedExpoView {
   readonly view: ExpoView;
   readonly context: ExpoViewContext;
   readonly previousProps: Map<string, ESObject> = new Map<string, ESObject>();
+  readonly dirtyProps: Set<string> = new Set<string>();
   initialized: boolean = false;
   destroyed: boolean = false;
 
@@ -290,9 +292,9 @@ export class ExpoViewDefinition<ViewType extends ExpoView = ExpoView> implements
 
     this.propValues.set(name, {
       descriptor: { name },
-      setter: (view: ViewType, value: ESObject): void => {
-        setter(view, ExpoValueConverter.fromBridge<Value>(value, type, `Expo view prop '${this.componentName}.${name}'`));
-      },
+      convert: (value: ESObject): ESObject =>
+        ExpoValueConverter.fromBridge<Value>(value, type, `Expo view prop '${this.componentName}.${name}'`) as ESObject,
+      setter: (view: ViewType, value: ESObject): void => setter(view, value as Value),
       hasDefaultValue: defaultValue !== undefined,
       defaultValue:
         defaultValue === undefined
@@ -343,8 +345,10 @@ export class ExpoViewDefinition<ViewType extends ExpoView = ExpoView> implements
     if (this.eventPayloadTypes.has(name)) {
       throw new Error(`Expo view event '${this.name}.${name}' already has a payload type.`);
     }
+
     this.eventNames.add(name);
     this.eventPayloadTypes.set(name, payloadType as ExpoValueType<ESObject>);
+
     return this;
   }
 
@@ -466,34 +470,49 @@ export class ExpoViewDefinition<ViewType extends ExpoView = ExpoView> implements
 
   updateProps(value: ESObject, props: Record<string, ESObject>): void {
     const mounted: MountedExpoView = this.requireMounted(value);
-    const nextPreviousProps: Map<string, ESObject> = new Map<string, ESObject>(mounted.previousProps);
 
+    const next: Map<string, ESObject> = new Map<string, ESObject>();
+    const converted: Map<string, ESObject> = new Map<string, ESObject>();
+    const names: string[] = Object.keys(props);
+
+    // Validate the entire update before invoking author setters. Dirty fields
+    // must be replayed even if the incoming value matches the last commit.
     this.propValues.forEach((registration: ExpoViewPropRegistration<ViewType>, name: string): void => {
-      const hasValue: boolean = Object.keys(props).includes(name);
+      const hasValue: boolean = names.includes(name);
+      if (hasValue) next.set(name, props[name]);
 
+      const dirty: boolean = mounted.dirtyProps.has(name);
       if (!hasValue) {
-        if (mounted.previousProps.has(name)) {
-          registration.setter(mounted.view as ViewType, registration.hasDefaultValue ? registration.defaultValue : null);
-          nextPreviousProps.delete(name);
-        } else if (!mounted.initialized && registration.hasDefaultValue) {
-          registration.setter(mounted.view as ViewType, registration.defaultValue);
+        if (mounted.previousProps.has(name) || dirty || (!mounted.initialized && registration.hasDefaultValue)) {
+          converted.set(name, registration.convert(registration.hasDefaultValue ? registration.defaultValue : null));
         }
-        return;
+      } else if (dirty || !mounted.previousProps.has(name) || mounted.previousProps.get(name) !== props[name]) {
+        const rawValue: ESObject = props[name];
+        converted.set(name, registration.convert(rawValue === null && registration.hasDefaultValue ? registration.defaultValue : rawValue));
       }
-
-      const rawValue: ESObject = props[name];
-      if (mounted.previousProps.has(name) && mounted.previousProps.get(name) === rawValue) return;
-
-      const resolvedValue: ESObject = rawValue === null && registration.hasDefaultValue ? registration.defaultValue : rawValue;
-      registration.setter(mounted.view as ViewType, resolvedValue);
-      nextPreviousProps.set(name, rawValue);
     });
 
+    converted.forEach((prop: ESObject, name: string): void => {
+      // A setter may mutate the view before throwing. Keep this dirty until the
+      // complete update (including onDidUpdateProps) succeeds.
+      mounted.dirtyProps.add(name);
+      this.propValues.get(name)?.setter(mounted.view as ViewType, prop);
+    });
+
+    // The update hook can also mutate unchanged managed fields before throwing.
+    this.propValues.forEach((registration: ExpoViewPropRegistration<ViewType>, name: string): void => {
+      if (mounted.previousProps.has(name) || next.has(name) || registration.hasDefaultValue) {
+        mounted.dirtyProps.add(name);
+      }
+    });
     this.updateBody?.(mounted.view as ViewType);
+
     mounted.previousProps.clear();
-    nextPreviousProps.forEach((prop: ESObject, name: string): void => {
+    next.forEach((prop: ESObject, name: string): void => {
       mounted.previousProps.set(name, prop);
     });
+
+    mounted.dirtyProps.clear();
     mounted.initialized = true;
   }
 
@@ -528,6 +547,7 @@ export class ExpoViewDefinition<ViewType extends ExpoView = ExpoView> implements
     } finally {
       mounted.context.invalidate();
       mounted.previousProps.clear();
+      mounted.dirtyProps.clear();
     }
   }
 
@@ -586,9 +606,11 @@ function containsBinaryValue(value: ESObject, seen: Set<ESObject>): boolean {
   if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return true;
   if (value === null || typeof value !== 'object') return false;
   if (seen.has(value)) return false;
+
   seen.add(value);
   if (Array.isArray(value)) {
     return value.some((item: ESObject): boolean => containsBinaryValue(item, seen));
   }
+
   return Object.keys(value).some((key: string): boolean => containsBinaryValue(value[key], seen));
 }

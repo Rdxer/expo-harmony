@@ -65,10 +65,12 @@ std::optional<long> readPositiveTransportLong(const folly::dynamic &value) {
   if (!value.isDouble()) {
     return std::nullopt;
   }
+
   const auto number = value.asDouble();
   if (!std::isfinite(number) || std::trunc(number) != number || number <= 0 || number > kMaxSafeTransportInteger || number > static_cast<double>(std::numeric_limits<long>::max())) {
     return std::nullopt;
   }
+
   return static_cast<long>(number);
 }
 
@@ -91,6 +93,7 @@ std::vector<jsi::Value> takeTypedEventArguments(
   arguments.emplace_back(static_cast<double>(transportId));
   auto value = context->callPlatformSyncTyped(
       "takeExpoTypedEventArguments", std::move(arguments));
+
   return ArkTSModuleAdapter::decodeTypedValues(context, value);
 }
 
@@ -169,6 +172,7 @@ std::shared_ptr<RuntimeContext> ExpoModulesCoreTurboModule::runtimeContext(
   if (isDestroyScheduled()) {
     throw CodedError("ERR_RUNTIME_DESTROYED", "Expo Modules Core is being destroyed.");
   }
+
   auto iterator = contexts_.find(&runtime);
   if (iterator != contexts_.end()) {
     if (auto existing = iterator->second.lock()) {
@@ -178,9 +182,11 @@ std::shared_ptr<RuntimeContext> ExpoModulesCoreTurboModule::runtimeContext(
     }
     contexts_.erase(iterator);
   }
+
   auto context = RuntimeContext::create(
       runtime, jsInvoker_, taskExecutor_, weak_from_this());
   contexts_[&runtime] = context;
+
   return context;
 }
 
@@ -188,16 +194,19 @@ bool ExpoModulesCoreTurboModule::hasRuntimeContext(jsi::Runtime *runtime) {
   if (!runtime) {
     return false;
   }
+
   std::scoped_lock lock(contextsMutex_);
   auto iterator = contexts_.find(runtime);
   if (iterator == contexts_.end()) {
     return false;
   }
+
   auto context = iterator->second.lock();
   if (!context || !context->isAlive() || !context->isAcceptingTasks()) {
     contexts_.erase(iterator);
     return false;
   }
+
   return true;
 }
 
@@ -213,10 +222,12 @@ void ExpoModulesCoreTurboModule::registerRuntimeContext(
         "ERR_RUNTIME_DESTROYED",
         "Cannot register an Expo RuntimeContext that is being destroyed.");
   }
+
   std::scoped_lock lock(contextsMutex_);
   if (isDestroyScheduled()) {
     throw CodedError("ERR_RUNTIME_DESTROYED", "Expo Modules Core is being destroyed.");
   }
+
   contexts_[&runtime] = context;
 }
 
@@ -228,6 +239,7 @@ void ExpoModulesCoreTurboModule::activateRuntimeContext(
         "ERR_RUNTIME_DESTROYED",
         "Cannot activate an Expo RuntimeContext that is being destroyed.");
   }
+
   std::scoped_lock lock(contextsMutex_);
   contexts_[&runtime] = context;
   activeRuntimeContext_ = context;
@@ -240,6 +252,7 @@ void ExpoModulesCoreTurboModule::ensureContentAppearedListener() {
     if (contentAppearedListener_) {
       return;
     }
+
     auto weakSelf = weak_from_this();
     listener = std::make_shared<ContentAppearedMarkerListener>(
         [weakSelf](size_t rnInstanceId) {
@@ -273,10 +286,12 @@ void ExpoModulesCoreTurboModule::handleContentAppeared(size_t rnInstanceId) {
         if (!context || !context->isAlive() || !context->isAcceptingTasks() || !context->hasModuleRegistry() || &context->runtime() != &runtime) {
           return;
         }
+
         auto delivered = self->contentAppearedRuntime_.lock();
         if (delivered && delivered.get() == context.get()) {
           return;
         }
+
         self->contentAppearedRuntime_ = context;
       }
 
@@ -336,6 +351,7 @@ jsi::Value ExpoModulesCoreTurboModule::install(jsi::Runtime &runtime) {
   // Only the JS runtime selects the View target.
   activateRuntimeContext(runtime, context);
   ensureContentAppearedListener();
+
   return jsi::Value(true);
 }
 
@@ -399,6 +415,7 @@ void ExpoModulesCoreTurboModule::beginDestroy(std::string destroyRequestId) {
         if (!mainJSInvoker) {
           return;
         }
+
         try {
           mainJSInvoker->invokeAsync(
               [safeInstance,
@@ -440,6 +457,7 @@ void ExpoModulesCoreTurboModule::beginDestroy(std::string destroyRequestId) {
     acknowledgeDestroy();
     return;
   }
+
   auto barrier = InvalidationBarrier::create(
       contexts.size(), std::move(acknowledgeDestroy));
   // Close the View gate before asynchronous teardown.
@@ -458,6 +476,7 @@ void ExpoModulesCoreTurboModule::onMessageReceived(
     if (!encodedPhase.isString() || !encodedComponentName.isString() || !encodedTag.isInt()) {
       return;
     }
+
     auto phase = encodedPhase.asString();
     auto componentName = encodedComponentName.asString();
     auto tag = encodedTag.asInt();
@@ -470,10 +489,12 @@ void ExpoModulesCoreTurboModule::onMessageReceived(
     if (!context || !context->isAlive() || !context->isAcceptingTasks() || !context->hasModuleRegistry()) {
       return;
     }
+
     const auto *view = context->moduleRegistry().findView(componentName);
     if (!view) {
       return;
     }
+
     try {
       if (phase == protocol::kViewPhaseCreate) {
         context->mountView(tag, componentName);
@@ -582,6 +603,7 @@ void ExpoModulesCoreTurboModule::onMessageReceived(
     if (!encodedRuntimeEpoch.isString() || !readPositiveTransportLong(encodedObjectId) || !encodedModuleName.isString() || !encodedClassName.isString() || !encodedEventName.isString() || (hasTypedTransport && !transportId) || (!hasTypedTransport && !arguments.isArray())) {
       return;
     }
+
     auto runtimeEpoch = decodeRuntimeEpoch(encodedRuntimeEpoch.asString());
     auto objectId = *readPositiveTransportLong(encodedObjectId);
     auto moduleName = encodedModuleName.asString();
@@ -618,11 +640,13 @@ void ExpoModulesCoreTurboModule::onMessageReceived(
             if (!context || !context->isAlive() || !context->isAcceptingTasks() || context->runtimeEpoch() != runtimeEpoch || !context->hasModuleRegistry() || &context->runtime() != &runtime) {
               return;
             }
+
             bool valuesHandled = false;
             auto discardPendingValues = [&] {
               if (valuesHandled) {
                 return;
               }
+
               valuesHandled = true;
               if (transportId) {
                 discardTypedEventArguments(context, *transportId);
@@ -638,6 +662,7 @@ void ExpoModulesCoreTurboModule::onMessageReceived(
                 discardPendingValues();
                 return;
               }
+
               std::vector<jsi::Value> values;
               if (transportId) {
                 values = takeTypedEventArguments(context, *transportId);
@@ -682,6 +707,7 @@ void ExpoModulesCoreTurboModule::onMessageReceived(
   if (message.name != protocol::kModuleEvent || !message.payload.isObject()) {
     return;
   }
+
   const auto encodedRuntimeEpoch = message.payload.getDefault("runtimeEpoch", "");
   const auto encodedModuleName = message.payload.getDefault("moduleName", "");
   const auto encodedEventName = message.payload.getDefault("eventName", "");
@@ -691,6 +717,7 @@ void ExpoModulesCoreTurboModule::onMessageReceived(
   if (!encodedRuntimeEpoch.isString() || !encodedModuleName.isString() || !encodedEventName.isString() || (hasTypedTransport && !transportId) || (!hasTypedTransport && !arguments.isArray())) {
     return;
   }
+
   auto runtimeEpoch = decodeRuntimeEpoch(encodedRuntimeEpoch.asString());
   auto moduleName = encodedModuleName.asString();
   auto eventName = encodedEventName.asString();
@@ -723,11 +750,13 @@ void ExpoModulesCoreTurboModule::onMessageReceived(
           if (!context || !context->isAlive() || !context->isAcceptingTasks() || context->runtimeEpoch() != runtimeEpoch || !context->hasModuleRegistry() || &context->runtime() != &runtime) {
             return;
           }
+
           bool valuesHandled = false;
           auto discardPendingValues = [&] {
             if (valuesHandled) {
               return;
             }
+
             valuesHandled = true;
             if (transportId) {
               discardTypedEventArguments(context, *transportId);
@@ -741,6 +770,7 @@ void ExpoModulesCoreTurboModule::onMessageReceived(
               discardPendingValues();
               return;
             }
+
             auto moduleWrapper = moduleValue.getObject(runtime);
             const auto &unwrappedModule = expo::LazyObject::unwrapObjectIfNecessary(runtime, moduleWrapper);
             auto module = jsi::Value(runtime, unwrappedModule).getObject(runtime);

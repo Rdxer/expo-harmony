@@ -5,11 +5,11 @@
 import type resmgr from '@ohos.resourceManager';
 import {
   MetroJSBundleProvider,
-  RNApp,
   RNOHCoreContext,
   RNOHErrorDialog,
   ResourceJSBundleProvider,
 } from '@rnoh/react-native-openharmony';
+import { ExpoRNApp } from '@expo-harmony/expo-modules-core';
 import { getRNOHPackages } from '../PackageProvider';
 import { ExpoHarmonyRootView } from '../generated/ExpoHarmonyHostProvider';
 
@@ -42,7 +42,7 @@ struct Index {
           if (this.rnohCoreContext.isDebugModeEnabled) {
             RNOHErrorDialog({ ctx: this.rnohCoreContext });
           }
-          RNApp({
+          ExpoRNApp({
             rnInstanceConfig: {
               name: "__EXPO_HARMONY_APP_LABEL__",
               createRNPackages: getRNOHPackages,

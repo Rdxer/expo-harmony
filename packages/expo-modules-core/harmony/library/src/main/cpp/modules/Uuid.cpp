@@ -26,9 +26,11 @@ std::string uuidV4() {
           "ERR_UUID_ENTROPY",
           "HarmonyOS secure random source failed: " + std::string(std::strerror(errno)));
     }
+
     offset += static_cast<size_t>(count);
   }
   applyUuidVersionAndVariant(bytes, 4);
+
   return formatUuid(bytes);
 }
 

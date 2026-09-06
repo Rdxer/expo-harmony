@@ -187,6 +187,7 @@ std::shared_ptr<RuntimeContext> RuntimeContext::create(
             // std::function construction may throw before invokeAsync.
           }
         }
+
         // Do not release JSI values from this executor thread.
         OH_LOG_Print(
             LOG_APP,
@@ -305,11 +306,13 @@ void RuntimeContext::invalidate(std::function<void()> completion) noexcept {
   if (!isAlive()) {
     return;
   }
+
   acceptingTasks_.store(false, std::memory_order_release);
   if (!isRuntimeThread()) {
     if (invalidationScheduled_.exchange(true, std::memory_order_acq_rel)) {
       return;
     }
+
     std::shared_ptr<RuntimeContext> retainedContext;
     try {
       retainedContext = shared_from_this();
@@ -355,6 +358,7 @@ void RuntimeContext::invalidate(std::function<void()> completion) noexcept {
   if (invalidating_.exchange(true, std::memory_order_acq_rel)) {
     return;
   }
+
   try {
     std::scoped_lock lock(mutex_);
     // Retain the context until teardown barriers finish.
@@ -383,6 +387,7 @@ void RuntimeContext::invalidateAfterViewTeardown() noexcept {
         "Expo View teardown did not return to its owning JavaScript executor");
     return;
   }
+
   {
     std::scoped_lock lock(mutex_);
     if (invalidationViewTeardownCompleted_) {
@@ -399,6 +404,7 @@ void RuntimeContext::invalidateAfterViewTeardown() noexcept {
         if (!context || !invoker) {
           return;
         }
+
         try {
           auto delivery = std::make_shared<ScheduledCallbackGuard>([] {
             OH_LOG_Print(
@@ -437,6 +443,7 @@ void RuntimeContext::continueInvalidationAfterExecutorStop() noexcept {
         "Expo modules executor teardown resumed on the wrong thread");
     return;
   }
+
   bool ready = false;
   {
     std::scoped_lock lock(mutex_);
@@ -455,6 +462,7 @@ void RuntimeContext::continueInvalidationAfterDispatchedInvocations() noexcept {
   if (!isRuntimeThread()) {
     return;
   }
+
   {
     std::scoped_lock lock(mutex_);
     invalidationContinuationScheduled_ = false;
@@ -485,6 +493,7 @@ void RuntimeContext::scheduleInvalidationAfterDispatchedInvocations() noexcept {
   if (!context || !invoker) {
     return;
   }
+
   try {
     auto delivery = std::make_shared<ScheduledCallbackGuard>([] {
       OH_LOG_Print(
@@ -514,6 +523,7 @@ void RuntimeContext::maybeFinishInvalidationAfterSharedObjects() noexcept {
   if (!isRuntimeThread()) {
     return;
   }
+
   bool shouldFinish = false;
   {
     std::scoped_lock lock(mutex_);
@@ -532,6 +542,7 @@ void RuntimeContext::finishInvalidation() noexcept {
   if (!isRuntimeThread()) {
     return;
   }
+
   drainModuleListeners();
   if (moduleRegistry_) {
     try {
@@ -607,11 +618,13 @@ void RuntimeContext::dispatchToJavaScript(std::function<void()> task) {
         "ERR_RUNTIME_DESTROYED",
         "Cannot dispatch Expo module work while the runtime is being destroyed.");
   }
+
   auto guarded = [weakContext = weak_from_this(), task = std::move(task)]() mutable {
     auto context = weakContext.lock();
     if (!context || !context->beginDispatchedInvocation()) {
       return;
     }
+
     RuntimeInvocationLease invocationLease(context);
     // Destroy task captures before the invocation lease retires.
     auto executingTask = std::move(task);
@@ -620,6 +633,7 @@ void RuntimeContext::dispatchToJavaScript(std::function<void()> task) {
   if (!jsInvoker_) {
     throw CodedError("ERR_QUEUE_UNAVAILABLE", "The Harmony JavaScript queue is unavailable.");
   }
+
   jsInvoker_->invokeAsync(std::move(guarded));
 }
 
@@ -772,6 +786,7 @@ void RuntimeContext::mountView(
         "ERR_INVALID_VIEW_HANDLE",
         "Expo view creation requires a positive tag and component name.");
   }
+
   std::scoped_lock lock(mutex_);
   const auto [iterator, inserted] = mountedViews_.emplace(tag, componentName);
   if (!inserted) {
@@ -780,10 +795,12 @@ void RuntimeContext::mountView(
           "ERR_VIEW_ALREADY_MOUNTED",
           "Expo view '" + componentName + "' with tag " + std::to_string(tag) + " was mounted more than once.");
     }
+
     throw CodedError(
         "ERR_VIEW_COMPONENT_MISMATCH",
         "Expo view tag " + std::to_string(tag) + " is already mounted as '" + iterator->second + "', not '" + componentName + "'.");
   }
+
   viewProps_.erase(tag);
 }
 
@@ -822,8 +839,10 @@ bool RuntimeContext::unmountView(
   if (iterator == mountedViews_.end() || iterator->second != componentName) {
     return false;
   }
+
   mountedViews_.erase(iterator);
   viewProps_.erase(tag);
+
   return true;
 }
 
@@ -869,6 +888,7 @@ void RuntimeContext::scheduleMountedViewTeardown() noexcept {
           "Cannot destroy mounted Expo views without a MAIN executor");
       return;
     }
+
     invalidateAfterViewTeardown();
     return;
   }
@@ -884,6 +904,7 @@ void RuntimeContext::scheduleMountedViewTeardown() noexcept {
           if (!context->destroyMountedViews()) {
             return;
           }
+
           try {
             auto delivery = std::make_shared<ScheduledCallbackGuard>([] {
               OH_LOG_Print(
@@ -1012,6 +1033,7 @@ bool RuntimeContext::destroyMountedViews() noexcept {
           static_cast<long long>(tag));
     }
   }
+
   return true;
 }
 
@@ -1036,6 +1058,7 @@ ModuleRegistry &RuntimeContext::moduleRegistry() const {
     throw CodedError(
         "ERR_RUNTIME_NOT_INSTALLED", "Expo module registry is not initialized.");
   }
+
   return *moduleRegistry_;
 }
 
@@ -1071,12 +1094,14 @@ long RuntimeContext::registerNativeSharedObject(
         "ERR_SHARED_OBJECT_RELEASED",
         "Cannot materialize a native SharedObject after release was requested.");
   }
+
   std::scoped_lock lock(mutex_);
   if (!alive_.load(std::memory_order_acquire) || !acceptingTasks_.load(std::memory_order_acquire)) {
     throw CodedError(
         "ERR_RUNTIME_DESTROYED",
         "Cannot register a SharedObject while its runtime is being destroyed.");
   }
+
   auto existing = nativeSharedObjectIds_.find(object.get());
   if (existing != nativeSharedObjectIds_.end()) {
     if (sharedObjectInvocations_.isReleaseRequested(existing->second) || object->isReleaseRequested()) {
@@ -1086,10 +1111,12 @@ long RuntimeContext::registerNativeSharedObject(
     }
     return existing->second;
   }
+
   auto objectId = allocateSharedObjectId();
   object->bindToRuntime(weak_from_this(), objectId);
   nativeSharedObjectIds_[object.get()] = objectId;
   nativeSharedObjects_[objectId] = std::move(object);
+
   return objectId;
 }
 
@@ -1104,6 +1131,7 @@ jsi::Value RuntimeContext::materializeNativeSharedObject(
         "ERR_CLASS_NOT_FOUND",
         "Cannot materialize shared object class '" + moduleName + "." + className + "'.");
   }
+
   auto klass = classValue.getObject(runtime()).getFunction(runtime());
   auto prototype = klass.getPropertyAsObject(runtime(), "prototype");
   auto jsObject = expo::common::createObjectWithPrototype(runtime(), &prototype);
@@ -1124,6 +1152,7 @@ jsi::Value RuntimeContext::bindNativeSharedObject(
     throw CodedError(
         "ERR_INVALID_SHARED_OBJECT", "Cannot bind a null shared object.");
   }
+
   const auto nativeRefType = nativeObject->nativeRefType();
   if (nativeRefType.empty()) {
     throw CodedError(
@@ -1135,6 +1164,7 @@ jsi::Value RuntimeContext::bindNativeSharedObject(
         "ERR_SHARED_OBJECT_TYPE",
         "A native SharedObject must have a registered Expo module and class.");
   }
+
   const bool isSharedRef = moduleRegistry().isSharedRefClass(moduleName, className);
   const bool nativeIsSharedRef = nativeRefType != "SharedObject";
   if (isSharedRef != nativeIsSharedRef) {
@@ -1145,6 +1175,7 @@ jsi::Value RuntimeContext::bindNativeSharedObject(
             ? "A SharedRef class must use a native object with a stable nativeRefType."
             : "A native SharedRef must be declared with the SharedRef JavaScript base class.");
   }
+
   auto objectId = registerNativeSharedObject(nativeObject);
   {
     std::scoped_lock lock(mutex_);
@@ -1160,13 +1191,19 @@ jsi::Value RuntimeContext::bindNativeSharedObject(
   if (!cached.isUndefined()) {
     return cached;
   }
+
+  SharedObjectWrapperState::Token wrapper;
+  {
+    std::scoped_lock lock(mutex_);
+    wrapper = sharedObjectWrappers_.replace(objectId);
+  }
   jsObject.setNativeState(
       runtime(),
       std::make_shared<expo::SharedObject::NativeState>(
           objectId,
-          [weakContext = weak_from_this()](long id) {
+          [weakContext = weak_from_this(), wrapper](long id) {
             if (auto context = weakContext.lock()) {
-              context->scheduleSharedObjectRelease(id);
+              context->scheduleSharedObjectRelease(id, wrapper);
             }
           }));
   if (isSharedRef) {
@@ -1186,6 +1223,7 @@ jsi::Value RuntimeContext::bindNativeSharedObject(
     jsObject.setExternalMemoryPressure(runtime(), memoryPressure);
   }
   retainSharedObject(objectId, jsObject);
+
   return jsi::Value(runtime(), jsObject);
 }
 
@@ -1201,6 +1239,7 @@ std::shared_ptr<NativeSharedObject> RuntimeContext::getNativeSharedObject(
             ? "Cannot use shared object " + std::to_string(objectId) + " because it was already released."
             : "Shared object " + std::to_string(objectId) + " does not have a valid native object.");
   }
+
   return iterator->second;
 }
 
@@ -1219,11 +1258,13 @@ std::shared_ptr<NativeSharedObject> RuntimeContext::getNativeSharedObject(
             ? "Cannot use shared object " + std::to_string(objectId) + " because it was already released."
             : "Shared object " + std::to_string(objectId) + " does not have a valid native object.");
   }
+
   const auto lineage = moduleRegistry_->sharedObjectClassLineage(
       classIterator->second.first, classIterator->second.second);
   if (sharedObjectClassIsAssignableTo(lineage, moduleName, className)) {
     return nativeIterator->second;
   }
+
   throw CodedError(
       "ERR_SHARED_OBJECT_TYPE",
       "SharedObject " + std::to_string(objectId) + " is not an instance of '" + moduleName + "." + className + "'.");
@@ -1236,6 +1277,7 @@ NativeSharedObjectIdentity RuntimeContext::nativeSharedObjectIdentity(
         "ERR_SHARED_OBJECT_RELEASED",
         "Cannot read the identity of a released SharedObject.");
   }
+
   std::scoped_lock lock(mutex_);
   const auto identity = nativeSharedObjectIds_.find(object.get());
   if (identity == nativeSharedObjectIds_.end() || !nativeSharedObjects_.contains(identity->second) || nativeSharedObjects_.at(identity->second) != object || sharedObjectInvocations_.isReleaseRequested(identity->second) || object->isReleaseRequested() || !object->isBoundToRuntime(this, identity->second)) {
@@ -1243,12 +1285,14 @@ NativeSharedObjectIdentity RuntimeContext::nativeSharedObjectIdentity(
         "ERR_SHARED_OBJECT_RELEASED",
         "Cannot read the identity of a released SharedObject.");
   }
+
   const auto klass = nativeSharedObjectClasses_.find(identity->second);
   if (klass == nativeSharedObjectClasses_.end()) {
     throw CodedError(
         "ERR_SHARED_OBJECT_TYPE",
         "The SharedObject does not have a canonical Expo class binding.");
   }
+
   return NativeSharedObjectIdentity{
       .objectId = identity->second,
       .runtimeEpoch = runtimeEpochString(),
@@ -1272,6 +1316,7 @@ SharedObjectInvocationIdentity RuntimeContext::captureSharedObjectInvocation(
         "ERR_SHARED_OBJECT_RELEASED",
         "Cannot queue work for a released SharedObject.");
   }
+
   std::scoped_lock lock(mutex_);
   auto identity = nativeSharedObjectIds_.find(object.get());
   if (!isAlive() || !isAcceptingTasks() || identity == nativeSharedObjectIds_.end() || sharedObjectInvocations_.isReleaseRequested(identity->second) || object->isReleaseRequested()) {
@@ -1279,12 +1324,14 @@ SharedObjectInvocationIdentity RuntimeContext::captureSharedObjectInvocation(
         "ERR_SHARED_OBJECT_RELEASED",
         "Cannot queue work for a SharedObject after it was released.");
   }
+
   auto registered = nativeSharedObjects_.find(identity->second);
   if (registered == nativeSharedObjects_.end() || registered->second != object || !object->isBoundToRuntime(this, identity->second)) {
     throw CodedError(
         "ERR_SHARED_OBJECT_RELEASED",
         "Cannot queue work for a SharedObject after it was released.");
   }
+
   return SharedObjectInvocationIdentity{
       .runtimeEpoch = runtimeEpoch_,
       .objectId = identity->second,
@@ -1320,6 +1367,7 @@ SharedObjectInvocationLeaseBundle RuntimeContext::acquireSharedObjectInvocations
         "ERR_SHARED_OBJECT_RELEASED",
         "Cannot execute native work after its runtime started teardown.");
   }
+
   for (const auto &object : uniqueObjects) {
     const auto identity = nativeSharedObjectIds_.find(object.get());
     if (identity == nativeSharedObjectIds_.end() || sharedObjectInvocations_.isReleaseRequested(identity->second)) {
@@ -1327,12 +1375,14 @@ SharedObjectInvocationLeaseBundle RuntimeContext::acquireSharedObjectInvocations
           "ERR_SHARED_OBJECT_RELEASED",
           "Cannot execute native work because a SharedObject argument was released.");
     }
+
     const auto registered = nativeSharedObjects_.find(identity->second);
     if (registered == nativeSharedObjects_.end() || registered->second != object || object->isReleaseRequested() || !object->isBoundToRuntime(this, identity->second)) {
       throw CodedError(
           "ERR_SHARED_OBJECT_RELEASED",
           "Cannot execute native work because a SharedObject argument was released.");
     }
+
     entries.emplace_back(
         SharedObjectInvocationIdentity{
             .runtimeEpoch = runtimeEpoch_,
@@ -1415,6 +1465,7 @@ void RuntimeContext::releaseSharedObject(long objectId) {
     if (!nativeSharedObjects_.contains(objectId)) {
       return;
     }
+
     (void)sharedObjectInvocations_.requestRelease(objectId);
     nativeSharedObjects_.at(objectId)->markReleaseRequested();
     if (!sharedObjectInvocations_.isReadyToFinalize(objectId)) {
@@ -1439,6 +1490,7 @@ void RuntimeContext::finalizeSharedObjectRelease(long objectId) {
     if (native == nativeSharedObjects_.end() || !sharedObjectInvocations_.beginFinalization(objectId)) {
       return;
     }
+
     released = native->second;
     if (auto deferred = deferredSharedObjectEmitters_.find(objectId);
         deferred != deferredSharedObjectEmitters_.end()) {
@@ -1568,6 +1620,7 @@ void RuntimeContext::finalizeSharedObjectRelease(long objectId) {
   {
     std::scoped_lock lock(mutex_);
     sharedObjects_.erase(objectId);
+    sharedObjectWrappers_.erase(objectId);
     deferredSharedObjectEmitters_.erase(objectId);
     auto native = nativeSharedObjects_.find(objectId);
     if (native != nativeSharedObjects_.end() && native->second == released) {
@@ -1632,7 +1685,7 @@ void RuntimeContext::releaseSharedObjectInvocations(
 }
 
 void RuntimeContext::scheduleSharedObjectReleaseFinalization(
-    long objectId) noexcept {
+    long objectId, SharedObjectWrapperState::Token wrapper) noexcept {
   std::shared_ptr<RuntimeContext> context;
   try {
     context = shared_from_this();
@@ -1643,6 +1696,7 @@ void RuntimeContext::scheduleSharedObjectReleaseFinalization(
   if (!invoker) {
     return;
   }
+
   try {
     auto delivery = std::make_shared<ScheduledCallbackGuard>([objectId] {
       OH_LOG_Print(
@@ -1654,12 +1708,19 @@ void RuntimeContext::scheduleSharedObjectReleaseFinalization(
           objectId);
     });
     invoker->invokeAsync(
-        [context = std::move(context), objectId, delivery = std::move(delivery)](jsi::Runtime &) {
+        [context = std::move(context), objectId, wrapper = std::move(wrapper), delivery = std::move(delivery)](jsi::Runtime &) {
           delivery->markDelivered();
           if (!context->isAlive()) {
             return;
           }
+
           try {
+            if (wrapper) {
+              std::scoped_lock lock(context->mutex_);
+              if (!context->sharedObjectWrappers_.isCurrent(objectId, wrapper)) {
+                return;
+              }
+            }
             context->releaseSharedObject(objectId);
           } catch (const CodedError &error) {
             logSharedObjectReleaseError(
@@ -1683,12 +1744,18 @@ void RuntimeContext::scheduleSharedObjectReleaseFinalization(
   }
 }
 
-void RuntimeContext::scheduleSharedObjectRelease(long objectId) noexcept {
+void RuntimeContext::scheduleSharedObjectRelease(long objectId, SharedObjectWrapperState::Token wrapper) noexcept {
   if (!isAlive()) {
     return;
   }
   if (isRuntimeThread()) {
     try {
+      if (wrapper) {
+        std::scoped_lock lock(mutex_);
+        if (!sharedObjectWrappers_.isCurrent(objectId, wrapper)) {
+          return;
+        }
+      }
       releaseSharedObject(objectId);
     } catch (const CodedError &error) {
       logSharedObjectReleaseError(
@@ -1705,7 +1772,8 @@ void RuntimeContext::scheduleSharedObjectRelease(long objectId) noexcept {
   if (!jsInvoker_) {
     return;
   }
-  scheduleSharedObjectReleaseFinalization(objectId);
+
+  scheduleSharedObjectReleaseFinalization(objectId, std::move(wrapper));
 }
 
 jsi::Value RuntimeContext::getSharedObject(long objectId) {
@@ -1728,6 +1796,7 @@ jsi::Value RuntimeContext::getSharedObject(long objectId) {
       sharedObjects_.erase(iterator);
     }
   }
+
   return value;
 }
 
@@ -1754,7 +1823,9 @@ bool RuntimeContext::endObservingSharedObject(
   if (!pending) {
     return false;
   }
+
   pending->hook(pending->eventName, pending->remainingEventCount);
+
   return true;
 }
 
@@ -1856,7 +1927,9 @@ void RuntimeContext::clearJSIReferences() {
           "ERR_SHARED_OBJECT_BUSY",
           "Cannot clear Expo runtime references while SharedObject invocations are still active.");
     }
+
     sharedObjects_.clear();
+    sharedObjectWrappers_.clear();
     deferredSharedObjectEmitters_.clear();
     nativeSharedObjects_.clear();
     nativeSharedObjectIds_.clear();
@@ -1878,6 +1951,7 @@ void RuntimeContext::releaseAllSharedObjects() noexcept {
     if (sharedObjectReleaseSweepActive_) {
       return;
     }
+
     sharedObjectReleaseSweepActive_ = true;
     objectIds.reserve(nativeSharedObjects_.size());
     for (const auto &[objectId, object] : nativeSharedObjects_) {

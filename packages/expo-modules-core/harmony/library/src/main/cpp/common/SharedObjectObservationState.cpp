@@ -12,10 +12,12 @@ size_t SharedObjectObservationState::begin(
   if (objectId <= 0 || !hook) {
     return 0;
   }
+
   auto &events = observations_[objectId];
   if (!events.emplace(std::move(eventName), std::move(hook)).second) {
     return 0;
   }
+
   return events.size();
 }
 
@@ -27,10 +29,12 @@ SharedObjectObservationState::take(
   if (object == observations_.end()) {
     return std::nullopt;
   }
+
   auto event = object->second.find(eventName);
   if (event == object->second.end()) {
     return std::nullopt;
   }
+
   PendingStop pending{
       .eventName = event->first,
       .remainingEventCount = object->second.size() - 1,
@@ -40,6 +44,7 @@ SharedObjectObservationState::take(
   if (object->second.empty()) {
     observations_.erase(object);
   }
+
   return pending;
 }
 
@@ -72,6 +77,7 @@ SharedObjectObservationState::drain(long objectId) {
   for (size_t index = 0; index < pending.size(); ++index) {
     pending[index].remainingEventCount = pending.size() - index - 1;
   }
+
   return pending;
 }
 

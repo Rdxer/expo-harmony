@@ -18,7 +18,9 @@ bool SharedObjectInvocationState::release(long objectId) noexcept {
   if (--active->second > 0) {
     return false;
   }
+
   activeCounts_.erase(active);
+
   return releaseRequested_.contains(objectId);
 }
 
@@ -46,6 +48,7 @@ bool SharedObjectInvocationState::beginFinalization(long objectId) noexcept {
   if (!isReadyToFinalize(objectId)) {
     return false;
   }
+
   try {
     return finalizing_.insert(objectId).second;
   } catch (...) {

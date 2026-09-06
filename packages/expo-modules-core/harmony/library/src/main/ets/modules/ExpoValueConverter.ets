@@ -1106,11 +1106,13 @@ export class ExpoValueConverter {
     if (value === null) return 'null';
     if (Array.isArray(value)) return 'array';
     if (value instanceof ArrayBuffer) return 'ArrayBuffer';
+
     const typedArrayName: string | undefined = numericTypedArrayName(value);
     if (typedArrayName !== undefined) return typedArrayName;
     if (ArrayBuffer.isView(value)) return 'non-numeric ArrayBuffer view';
     if (value instanceof Date) return 'Date';
     if (value instanceof url.URL) return 'URL';
+
     return typeof value;
   }
 }
@@ -1126,6 +1128,7 @@ export function ownedFunctionArity<Owner>(body: ExpoOwnedSyncFunction<Owner> | E
 /** @internal Writable argument positions in the module transport descriptor. */
 export function writableFunctionArguments<Body>(body: Body | ExpoFunctionSpec<Body>): number[] {
   if (!(body instanceof ExpoFunctionSpec)) return [];
+
   const indices: number[] = [];
   body.argumentTypes.forEach((type: ExpoValueType<ESObject>, index: number): void => {
     if (!type.isWritable) return;
@@ -1134,6 +1137,7 @@ export function writableFunctionArguments<Body>(body: Body | ExpoFunctionSpec<Bo
     }
     indices.push(index);
   });
+
   return indices;
 }
 
@@ -1218,6 +1222,7 @@ export async function invokeAsyncFunction(body: ExpoAsyncFunction, args: ESObjec
   if (writableFunctionArguments(body).length > 0) {
     throw new ExpoModuleError('ERR_WRITABLE_ARGUMENT', 'Writable arguments are supported only by synchronous module functions.');
   }
+
   const values: ESObject[] = prepareArguments(body, args, 0, path);
   const result: ESObject | void = await invokeRawAsyncFunction(unwrapAsyncFunction(body), values);
 
@@ -1502,6 +1507,7 @@ function decodeDate(value: ESObject, path: string): Date {
   if (!Number.isFinite(epochMilliseconds)) {
     throw new ExpoArgumentTypeError(path, 'valid ISO-8601 date-time string', value);
   }
+
   return new Date(epochMilliseconds);
 }
 

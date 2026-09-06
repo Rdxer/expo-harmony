@@ -20,6 +20,7 @@ int64_t requireViewTag(Invocation &invocation) {
         "ERR_VIEW_NOT_FOUND",
         invocation.path() + " must be called with an Expo view ref as this.");
   }
+
   auto object = thisValue.getObject(runtime);
   auto nativeTag = object.getProperty(runtime, "nativeTag");
   if (!nativeTag.isNumber() || !std::isfinite(nativeTag.getNumber()) || std::trunc(nativeTag.getNumber()) != nativeTag.getNumber() || nativeTag.getNumber() <= 0 || nativeTag.getNumber() > kMaxSafeInteger) {
@@ -27,6 +28,7 @@ int64_t requireViewTag(Invocation &invocation) {
         "ERR_VIEW_NOT_FOUND",
         invocation.path() + " cannot resolve the mounted Expo view tag.");
   }
+
   return static_cast<int64_t>(nativeTag.getNumber());
 }
 
@@ -39,6 +41,7 @@ std::string requireViewComponentName(Invocation &invocation) {
         "ERR_VIEW_NOT_FOUND",
         invocation.path() + " cannot resolve the Expo view component route.");
   }
+
   return componentName.getString(runtime).utf8(runtime);
 }
 
@@ -52,6 +55,7 @@ int64_t requireViewPropsRevision(Invocation &invocation) {
         "ERR_VIEW_NOT_FOUND",
         invocation.path() + " cannot resolve the committed Expo view props revision.");
   }
+
   return static_cast<int64_t>(revision.getNumber());
 }
 
@@ -82,6 +86,7 @@ ViewHandle requireViewHandle(
   }
 
   // The ArkTS adapter registry is authoritative before native mount state arrives.
+
   return ViewHandle(tag, std::move(componentName), propsRevision);
 }
 

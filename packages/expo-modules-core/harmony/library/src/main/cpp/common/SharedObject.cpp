@@ -83,6 +83,7 @@ void installBaseClass(jsi::Runtime &runtime, const ObjectReleaser& releaser) {
                 ? 0
                 : static_cast<double>(nativeState->objectId));
       }
+
       return jsi::Value(0);
     }
   });

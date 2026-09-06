@@ -22,6 +22,7 @@
 #include "api/internal/AsyncTaskLifecycle.h"
 #include "api/internal/PromiseSettlementState.h"
 #include "common/JSI/JSIUtils.h"
+#include "common/JSI/RecordProperty.h"
 #include "errors/CodedError.h"
 #include "runtime/RuntimeContext.h"
 
@@ -149,10 +150,12 @@ std::optional<std::string> readNapiString(
     if (napi_typeof(env, value, &type) != napi_ok || type != napi_string) {
       return std::nullopt;
     }
+
     size_t length = 0;
     if (napi_get_value_string_utf8(env, value, nullptr, 0, &length) != napi_ok) {
       return std::nullopt;
     }
+
     std::vector<char> bytes(length + 1, '\0');
     size_t copied = 0;
     if (napi_get_value_string_utf8(
@@ -210,19 +213,12 @@ std::shared_ptr<const CodedError> codedCauseFromArkTS(
   if (!cause) {
     return nullptr;
   }
+
   return std::make_shared<CodedError>(
       cause->code,
       cause->message,
       cause->path,
       codedCauseFromArkTS(cause->cause));
-}
-
-CodedError codedErrorFromArkTS(ArkTSErrorValue error) {
-  return CodedError(
-      std::move(error.code),
-      std::move(error.message),
-      std::move(error.path),
-      codedCauseFromArkTS(error.cause));
 }
 
 ArkTSErrorValue arkTSErrorFromCodedError(
@@ -248,10 +244,16 @@ ArkTSErrorValue arkTSErrorFromCodedError(
   if (napi_is_exception_pending(env, &exceptionPending) == napi_ok && exceptionPending) {
     napi_value exception = nullptr;
     if (napi_get_and_clear_last_exception(env, &exception) == napi_ok && exception != nullptr) {
-      throw codedErrorFromArkTS(readNapiErrorValue(
+      auto error = readNapiErrorValue(
           env,
           exception,
-          "ArkTS Expo method '" + methodName + "' threw an exception."));
+          "ArkTS Expo method '" + methodName + "' threw an exception.");
+
+      throw CodedError(
+          std::move(error.code),
+          std::move(error.message),
+          std::move(error.path),
+          codedCauseFromArkTS(error.cause));
     }
   }
 
@@ -285,6 +287,7 @@ napi_value callNapiMethod(
     throw std::runtime_error(
         "Expo Modules ArkTS instance has no method '" + methodName + "'.");
   }
+
   napi_value result = nullptr;
   status = napi_call_function(
       env,
@@ -300,6 +303,7 @@ napi_value callNapiMethod(
   if (napi_is_exception_pending(env, &exceptionPending) != napi_ok || exceptionPending) {
     throwNapiMethodFailure(env, napi_pending_exception, methodName);
   }
+
   return result;
 }
 
@@ -371,6 +375,7 @@ WritableBinaryRange writableBinaryRange(jsi::Runtime &runtime, const jsi::Value 
   if (!value.isObject()) {
     throw CodedError("ERR_WRITABLE_ARGUMENT", "A writable argument must be an ArrayBuffer or numeric TypedArray.");
   }
+
   auto object = value.getObject(runtime);
   if (object.isArrayBuffer(runtime)) {
     const auto length = object.getArrayBuffer(runtime).size(runtime);
@@ -379,6 +384,7 @@ WritableBinaryRange writableBinaryRange(jsi::Runtime &runtime, const jsi::Value 
   if (!typedArrayKind(runtime, object)) {
     throw CodedError("ERR_WRITABLE_ARGUMENT", "A writable argument must be an ArrayBuffer or numeric TypedArray.");
   }
+
   auto buffer = object.getProperty(runtime, "buffer");
   auto offset = object.getProperty(runtime, "byteOffset");
   auto length = object.getProperty(runtime, "byteLength");
@@ -388,6 +394,7 @@ WritableBinaryRange writableBinaryRange(jsi::Runtime &runtime, const jsi::Value 
   if (!buffer.isObject() || !buffer.getObject(runtime).isArrayBuffer(runtime) || !validSize(offset) || !validSize(length)) {
     throw CodedError("ERR_WRITABLE_ARGUMENT", "A writable argument has invalid binary storage.");
   }
+
   auto backing = buffer.getObject(runtime);
   const auto offsetBytes = static_cast<size_t>(offset.getNumber());
   const auto lengthBytes = static_cast<size_t>(length.getNumber());
@@ -395,6 +402,7 @@ WritableBinaryRange writableBinaryRange(jsi::Runtime &runtime, const jsi::Value 
   if (offsetBytes > backingSize || lengthBytes > backingSize - offsetBytes) {
     throw CodedError("ERR_WRITABLE_ARGUMENT", "A writable argument exceeds its backing buffer.");
   }
+
   return {std::move(backing), offsetBytes, lengthBytes};
 }
 
@@ -461,6 +469,7 @@ TypedArrayValue copyTypedArray(
   if (offset > buffer.size(runtime) || length > buffer.size(runtime) - offset) {
     throw std::runtime_error("TypedArray byte range exceeds its backing buffer.");
   }
+
   const auto &spec = typedArraySpec(kind);
   if (length % spec.elementSize != 0 || offset % spec.elementSize != 0) {
     throw std::runtime_error(
@@ -469,12 +478,14 @@ TypedArrayValue copyTypedArray(
   if (snapshots) {
     return TypedArrayValue{kind, length / spec.elementSize, {}, snapshots->get(runtime, bufferValue.getObject(runtime), offset, length), offset};
   }
+
   std::vector<uint8_t> bytes;
   if (length > 0) {
     bytes.assign(
         buffer.data(runtime) + offset,
         buffer.data(runtime) + offset + length);
   }
+
   return TypedArrayValue{kind, length / spec.elementSize, std::move(bytes)};
 }
 
@@ -548,6 +559,7 @@ TypedPlatformValue fromJSI(
     result.emplace(
         std::move(key), fromJSI(runtime, jsInvoker, property, depth + 1, snapshots));
   }
+
   return TypedPlatformValue(std::move(result));
 }
 
@@ -560,6 +572,7 @@ napi_value createNapiArrayBuffer(napi_env env, const std::vector<uint8_t> &bytes
   if (!bytes.empty()) {
     std::memcpy(data, bytes.data(), bytes.size());
   }
+
   return result;
 }
 
@@ -610,6 +623,7 @@ napi_value toNapi(napi_env env, ArkJS &arkJS, TypedPlatformValue value, Synchron
           if (stored.synchronousBacking && stored.byteOffset < stored.synchronousBacking->offset) {
             throw std::runtime_error("TypedArray byte offset precedes its synchronous snapshot.");
           }
+
           const auto offset = stored.synchronousBacking
                                 ? stored.byteOffset - stored.synchronousBacking->offset
                                 : stored.byteOffset;
@@ -617,6 +631,7 @@ napi_value toNapi(napi_env env, ArkJS &arkJS, TypedPlatformValue value, Synchron
             throw std::runtime_error(
                 "Expo Modules received inconsistent TypedArray storage.");
           }
+
           auto arrayBuffer = stored.synchronousBacking
                                ? synchronousNapiArrayBuffer(env, stored.synchronousBacking, buffers)
                                : createNapiArrayBuffer(env, stored.bytes);
@@ -642,6 +657,7 @@ TypedPlatformValue fromNapi(napi_env env, ArkJS &arkJS, napi_value value, size_t
   if (depth > kMaximumTransportDepth) {
     throw std::runtime_error("Expo Modules platform result exceeds the maximum nesting depth.");
   }
+
   switch (arkJS.getType(value)) {
     case napi_undefined:
       return TypedPlatformValue(UndefinedValue{});
@@ -673,12 +689,14 @@ TypedPlatformValue fromNapi(napi_env env, ArkJS &arkJS, napi_value value, size_t
           throw std::runtime_error(
               "Expo Modules received an oversized TypedArray result.");
         }
+
         const auto byteLength = length * spec.elementSize;
         auto *bytes = static_cast<uint8_t *>(data);
         if (byteLength > 0 && bytes == nullptr) {
           throw std::runtime_error(
               "Expo Modules received a TypedArray result without backing storage.");
         }
+
         std::vector<uint8_t> copiedBytes;
         if (byteLength > 0) {
           copiedBytes.assign(bytes, bytes + byteLength);
@@ -739,7 +757,12 @@ jsi::Value toJSI(jsi::Runtime &runtime, TypedPlatformValue value) {
         } else if constexpr (std::is_same_v<Value, std::string>) {
           return jsi::Value(jsi::String::createFromUtf8(runtime, stored));
         } else if constexpr (std::is_same_v<Value, ArkTSErrorValue>) {
-          CodedJSError error(runtime, codedErrorFromArkTS(std::move(stored)));
+          CodedJSError error(runtime, CodedError(
+              std::move(stored.code),
+              std::move(stored.message),
+              std::move(stored.path),
+              codedCauseFromArkTS(stored.cause)));
+
           return jsi::Value(runtime, error.value());
         } else if constexpr (std::is_same_v<Value, TypedPlatformValue::Array>) {
           jsi::Array result(runtime, stored.size());
@@ -750,14 +773,11 @@ jsi::Value toJSI(jsi::Runtime &runtime, TypedPlatformValue value) {
         } else if constexpr (std::is_same_v<Value, TypedPlatformValue::Record>) {
           jsi::Object result(runtime);
           for (auto &[key, item] : stored) {
-            expo::common::defineProperty(
+            expo::common::defineRecordProperty(
                 runtime,
-                &result,
-                key.c_str(),
-                {.configurable = true,
-                 .enumerable = true,
-                 .writable = true,
-                 .value = toJSI(runtime, std::move(item))});
+                result,
+                jsi::String::createFromUtf8(runtime, key),
+                toJSI(runtime, std::move(item)));
           }
           return jsi::Value(std::move(result));
         } else if constexpr (std::is_same_v<Value, ArrayBufferValue>) {
@@ -784,21 +804,16 @@ class AsyncSettlementState final {
 public:
   AsyncSettlementState(
       const std::shared_ptr<react::Promise> &promise,
-      const std::shared_ptr<react::CallInvoker> &jsInvoker)
+      const std::shared_ptr<react::CallInvoker> &invoker)
       : promise_(promise),
-        jsInvoker_(jsInvoker),
-        retentionRelease_(std::make_shared<OneShotReleaseState>(
-            [weakPromise = std::weak_ptr<react::Promise>(promise)]() {
-              if (auto retainedPromise = weakPromise.lock()) {
+        invoker_(invoker),
+        retention_(
+            [weak = std::weak_ptr<react::Promise>(promise)]() {
+              if (auto promise = weak.lock()) {
                 // allowRelease is synchronized and does not touch JSI.
-                retainedPromise->allowRelease();
+                promise->allowRelease();
               }
-            })) {}
-
-  ~AsyncSettlementState() noexcept {
-    // Release retention when an ArkTS Promise is abandoned.
-    retentionRelease_->release();
-  }
+            }) {}
 
   void resolve(TypedPlatformValue value) noexcept {
     settle(false, std::move(value));
@@ -814,30 +829,34 @@ public:
 
 private:
   void settle(bool rejected, TypedPlatformValue value) noexcept {
-    if (!settlementState_.trySettle()) {
+    if (!settlement_.trySettle()) {
       return;
     }
+
+    auto release = retention_.transferToDelivery();
     try {
-      auto jsInvoker = jsInvoker_.lock();
-      if (!jsInvoker) {
-        retentionRelease_->release();
+      auto invoker = invoker_.lock();
+      if (!invoker) {
+        release->release();
         return;
       }
-      auto transportedValue = std::make_shared<TypedPlatformValue>(std::move(value));
-      auto weakPromise = promise_;
-      auto retentionRelease = retentionRelease_;
-      auto delivery = std::make_shared<ScheduledCallbackGuard>(retentionRelease);
-      jsInvoker->invokeAsync(
-          [weakPromise,
-           retentionRelease = std::move(retentionRelease),
+
+      auto payload = std::make_shared<TypedPlatformValue>(std::move(value));
+      auto weak = promise_;
+      auto delivery = std::make_shared<ScheduledCallbackGuard>(release);
+
+      invoker->invokeAsync(
+          [weak,
+           release,
            delivery = std::move(delivery),
-           transportedValue = std::move(transportedValue),
+           payload = std::move(payload),
            rejected](jsi::Runtime &runtime) mutable {
             delivery->markDelivered();
-            auto promise = weakPromise.lock();
+
+            auto promise = weak.lock();
             if (promise) {
               try {
-                auto result = toJSI(runtime, std::move(*transportedValue));
+                auto result = toJSI(runtime, std::move(*payload));
                 if (rejected) {
                   promise->reject_.call(runtime, result);
                 } else {
@@ -857,18 +876,19 @@ private:
                 }
               }
             }
-            retentionRelease->release();
+
+            release->release();
           });
     } catch (...) {
       // Release retention if dispatch admission fails.
-      retentionRelease_->release();
+      release->release();
     }
   }
 
   std::weak_ptr<react::Promise> promise_;
-  std::weak_ptr<react::CallInvoker> jsInvoker_;
-  std::shared_ptr<OneShotReleaseState> retentionRelease_;
-  PromiseSettlementState settlementState_;
+  std::weak_ptr<react::CallInvoker> invoker_;
+  AsyncSettlementLifetime retention_;
+  PromiseSettlementState settlement_;
 };
 
 // napi_delete_reference must run on the creation thread; discarded tasks have
@@ -923,6 +943,7 @@ napi_value handleNapiSettlement(napi_env env, napi_callback_info info) noexcept 
         return arkJS.getUndefined();
       }
     }
+
     auto value = argumentCount == 0
                    ? TypedPlatformValue(UndefinedValue{})
                    : fromNapi(env, arkJS, argument, 0);
@@ -941,6 +962,7 @@ napi_value handleNapiSettlement(napi_env env, napi_callback_info info) noexcept 
   }
   napi_value undefinedValue = nullptr;
   (void)napi_get_undefined(env, &undefinedValue);
+
   return undefinedValue;
 }
 
@@ -972,6 +994,7 @@ napi_value createNapiSettlementCallback(
           nullptr),
       "retain a Promise settlement callback");
   (void)data.release();
+
   return callback;
 }
 
@@ -1016,6 +1039,7 @@ public:
     if (!completed) {
       throw CodedError("ERR_WRITABLE_ARGUMENT", "The synchronous binary call did not complete.");
     }
+
     // Finish all JS property reads before obtaining any writable pointer.
     // A getter on a later view must not detach an already acquired pointer.
     for (const auto &target : targets) {
@@ -1027,6 +1051,7 @@ public:
     if (!context.isAlive() || !context.isAcceptingTasks()) {
       throw CodedError("ERR_WRITABLE_ARGUMENT", "The runtime became unavailable before binary write-back.");
     }
+
     std::vector<uint8_t *> destinations;
     destinations.reserve(targets.size());
     for (const auto &target : targets) {
@@ -1089,6 +1114,7 @@ public:
     if (!instanceRef_) {
       return;
     }
+
     try {
       auto deferred = std::make_shared<DeferredNapiRefRelease>(std::move(instanceRef_));
       if (!taskExecutor_) {
@@ -1098,6 +1124,7 @@ public:
         deferred->releaseOnOwnerThread();
         return;
       }
+
       taskExecutor_->runTask(
           turboModuleThread_,
           [deferred = std::move(deferred)]() noexcept {

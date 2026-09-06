@@ -42,12 +42,14 @@ std::optional<RuntimeEpoch> decodeRuntimeEpoch(
   if (encoded.empty() || encoded.front() < '1' || encoded.front() > '9') {
     return std::nullopt;
   }
+
   RuntimeEpoch epoch = kInvalidRuntimeEpoch;
   const auto [end, error] = std::from_chars(
       encoded.data(), encoded.data() + encoded.size(), epoch);
   if (error != std::errc{} || end != encoded.data() + encoded.size() || epoch == kInvalidRuntimeEpoch) {
     return std::nullopt;
   }
+
   return epoch;
 }
 

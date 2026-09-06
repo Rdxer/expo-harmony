@@ -26,6 +26,7 @@ void validateHostArguments(
   if (!expectation) {
     return;
   }
+
   throw expo::harmony::CodedJSError(
       runtime,
       "ERR_INVALID_ARGUMENT",
@@ -59,6 +60,7 @@ void Listeners::remove(jsi::Runtime &runtime, const std::string& eventName, cons
   if (event == listenersMap.end()) {
     return;
   }
+
   jsi::Value listenerValue(runtime, listener);
 
   event->second.remove_if([&](const jsi::Value &item) {
@@ -94,6 +96,7 @@ void Listeners::call(jsi::Runtime &runtime, const std::string& eventName, const 
   if (!listenersMap.contains(eventName)) {
     return;
   }
+
   ListenersList &listenersList = listenersMap[eventName];
   size_t listSize = listenersList.size();
 
@@ -114,6 +117,7 @@ void Listeners::call(jsi::Runtime &runtime, const std::string& eventName, const 
     }
     return;
   }
+
   // When there are more than one listener, we copy the list to a vector as the list may be modified during the loop.
   std::vector<jsi::Function> listenersVector;
   listenersVector.reserve(listSize);
@@ -151,6 +155,7 @@ NativeState::Shared NativeState::get(jsi::Runtime &runtime, const jsi::Object &o
     object.setNativeState(runtime, state);
     return state;
   }
+
   return nullptr;
 }
 
@@ -258,6 +263,7 @@ void addListener(jsi::Runtime &runtime, const jsi::Object &emitter, const std::s
           "ERR_EVENT_EMITTER_RELEASED",
           "Cannot add a listener while its EventEmitter is being released.");
     }
+
     state->listeners.add(runtime, eventName, listener);
 
     if (state->listeners.listenersCount(eventName) == 1) {
@@ -558,6 +564,7 @@ void installClass(jsi::Runtime &runtime) {
             "ERR_INVALID_ARGUMENT",
             "EventEmitter constructor expected its optional argument to be an object.");
       }
+
       // Keep a temporary object so LazyObject unwrapping works reliably.
       const jsi::Object &tmp = args[0].asObject(runtime);
       const jsi::Object &firstArg = LazyObject::unwrapObjectIfNecessary(runtime, tmp);
@@ -568,6 +575,7 @@ void installClass(jsi::Runtime &runtime) {
         return jsi::Value(runtime, args[0]);
       }
     }
+
     return jsi::Value(runtime, thisValue);
   });
   jsi::Object prototype = eventEmitterClass.getPropertyAsObject(runtime, "prototype");

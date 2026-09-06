@@ -38,6 +38,7 @@ jsi::Value versionObject(Invocation &invocation) {
   value.setProperty(runtime, "major", ExpoModulesCoreVersionMajor);
   value.setProperty(runtime, "minor", ExpoModulesCoreVersionMinor);
   value.setProperty(runtime, "patch", ExpoModulesCoreVersionPatch);
+
   return value;
 }
 
@@ -52,10 +53,12 @@ std::string platformDirectory(
         "ERR_PLATFORM_ADAPTER",
         std::string(methodName) + " returned a non-string directory URI.");
   }
+
   auto directory = value.getString(runtime).utf8(runtime);
   if (!directory.empty() && directory.back() != '/') {
     directory.push_back('/');
   }
+
   return directory;
 }
 
@@ -130,6 +133,7 @@ ModuleDefinition CoreModule::definition() {
                       if (!module) {
                         return jsi::Value(nullptr);
                       }
+
                       auto view = std::find_if(
                           module->views.begin(),
                           module->views.end(),
@@ -139,6 +143,7 @@ ModuleDefinition CoreModule::definition() {
                       if (view == module->views.end()) {
                         return jsi::Value(nullptr);
                       }
+
                       auto &runtime = invocation.runtime();
                       jsi::Object validAttributes(runtime);
                       for (const auto &prop : view->props) {
@@ -190,6 +195,7 @@ ModuleDefinition CoreModule::definition() {
                           invocation.runtime(), invocation.sharedContext());
                       return jsi::Value::undefined();
                     }});
+
   return std::move(builder).build();
 }
 

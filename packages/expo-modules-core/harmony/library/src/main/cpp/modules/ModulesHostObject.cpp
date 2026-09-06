@@ -122,6 +122,7 @@ std::vector<const ClassDefinition *> orderedClasses(
           "Module '" + module.name + "' contains a native class inheritance cycle.");
     }
   }
+
   return result;
 }
 
@@ -234,6 +235,7 @@ jsi::Value invokeFunction(
           }
         });
   }
+
   return translateErrors(runtime, context, path, definition.async, [&]() {
     Invocation invocation(
         context, path, runtime, thisValue, arguments, argumentCount);
@@ -250,6 +252,7 @@ jsi::Value invokeFunction(
         return result;
       }
     }
+
     auto retained = std::make_shared<jsi::Value>(runtime, result);
     return Promise::create(
         runtime,
@@ -316,6 +319,7 @@ void defineProperty(
       });
     };
   }
+
   std::function<void(jsi::Runtime &, jsi::Object, jsi::Value)> setter;
   if (definition.setter) {
     setter = [context, path, definition = &definition](
@@ -333,6 +337,7 @@ void defineProperty(
       });
     };
   }
+
   expo::common::defineProperty(
       runtime,
       &target,
@@ -362,6 +367,7 @@ void defineConstant(
            if (*cachedValue) {
              return jsi::Value(rt, **cachedValue);
            }
+
            Invocation invocation(
                context,
                path,
@@ -448,6 +454,7 @@ void defineSharedFunction(
                     }
                   });
             }
+
             return translateErrors(rt, context, path, definition->async, [&]() {
               auto objectId = requireSharedObjectId(rt, thisValue, className);
               auto nativeObject = context->getNativeSharedObject(
@@ -467,6 +474,7 @@ void defineSharedFunction(
                   return result;
                 }
               }
+
               auto retained = std::make_shared<jsi::Value>(rt, result);
               return Promise::create(
                   rt,
@@ -504,6 +512,7 @@ void defineSharedProperty(
       });
     };
   }
+
   std::function<void(jsi::Runtime &, jsi::Object, jsi::Value)> setter;
   if (definition.setter) {
     setter = [context, path, moduleName, className, definition = &definition](
@@ -716,6 +725,7 @@ jsi::Object ModulesHostObject::createModule(
                   }
                 }
               }
+
               return jsi::Value::undefined();
             }));
     auto stopName = jsi::PropNameID::forAscii(runtime, "stopObserving");
@@ -779,6 +789,7 @@ jsi::Object ModulesHostObject::createModule(
                   }
                 }
               }
+
               return jsi::Value::undefined();
             }));
   }
@@ -812,6 +823,7 @@ jsi::Object ModulesHostObject::createModule(
               "ERR_INVALID_ARGUMENT",
               classPath + ".constructor received a non-object receiver.");
         }
+
         const auto identity = context->captureSharedObjectInvocation(nativeObject);
         const auto rollback = [&]() noexcept {
           try {
@@ -850,6 +862,7 @@ jsi::Object ModulesHostObject::createModule(
         return expo::SharedObject::createClass(
             runtime, classDefinition.name.c_str(), constructor);
       }
+
       auto baseModuleName = definition.name;
       auto baseClassName = classDefinition.baseClassName;
       auto separator = baseClassName.find('.');
@@ -874,6 +887,7 @@ jsi::Object ModulesHostObject::createModule(
             "ERR_CLASS_NOT_FOUND",
             "Base class '" + baseModuleName + "." + baseClassName + "' must be registered before '" + classPath + "'.");
       }
+
       auto baseClass = baseValue.getObject(runtime).getFunction(runtime);
       return expo::common::createInheritingClass(
           runtime,
@@ -976,6 +990,7 @@ jsi::Object ModulesHostObject::createModule(
                     return jsi::Value::undefined();
                   }
                 }
+
                 return jsi::Value::undefined();
               }));
       auto stopName = jsi::PropNameID::forAscii(
@@ -1002,6 +1017,7 @@ jsi::Object ModulesHostObject::createModule(
                 return jsi::Value::undefined();
               }));
     }
+
     module.setProperty(runtime, classDefinition.name.c_str(), std::move(klass));
   }
 
@@ -1027,6 +1043,7 @@ jsi::Object ModulesHostObject::createModule(
     }
   }
   module.setProperty(runtime, "ViewPrototypes", std::move(viewPrototypes));
+
   return module;
 }
 

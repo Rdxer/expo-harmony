@@ -62,6 +62,7 @@ jsi::Value Promise::create(
         }
         return jsi::Value::undefined();
       });
+
   return constructor.callAsConstructor(runtime, executor);
 }
 
@@ -210,6 +211,7 @@ void Promise::cancelAndReject() noexcept {
     invalidate();
     return;
   }
+
   // Keep promises in the teardown snapshot observable to JS until rejection.
   settlementState_.markSettled();
   releaseRetainedResources();

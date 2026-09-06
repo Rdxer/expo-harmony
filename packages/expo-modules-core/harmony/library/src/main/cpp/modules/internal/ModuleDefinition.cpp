@@ -93,12 +93,14 @@ void NativeSharedObject::bindToRuntime(
         "ERR_SHARED_OBJECT_RELEASED",
         "A released native SharedObject cannot be bound to another JavaScript object.");
   }
+
   auto sharedContext = context.lock();
   if (!sharedContext || !sharedContext->isAlive()) {
     throw CodedError(
         "ERR_RUNTIME_DESTROYED",
         "Cannot bind a SharedObject to a destroyed runtime.");
   }
+
   std::scoped_lock lock(runtimeBindingMutex_);
   if (runtimeContext_.expired()) {
     runtimeBinding_.reset();
@@ -109,6 +111,7 @@ void NativeSharedObject::bindToRuntime(
         "ERR_SHARED_OBJECT_RUNTIME",
         "A native SharedObject cannot be reused by two live JavaScript runtimes.");
   }
+
   runtimeContext_ = std::move(context);
   objectId_ = objectId;
 }
@@ -202,6 +205,7 @@ ModuleDefinitionBuilder &ModuleDefinitionBuilder::view(
     }
   }
   definition_.views.push_back(std::move(definition));
+
   return *this;
 }
 
@@ -253,6 +257,7 @@ void validateFunctions(
           "ERR_INVALID_DEFINITION",
           owner + "." + function.name + " has no native body.");
     }
+
     const auto requiredArity = function.requiredArity.value_or(function.arity);
     if (requiredArity > function.arity) {
       throw CodedError(
@@ -282,6 +287,7 @@ void validateModuleDefinition(const ModuleDefinition &definition) {
   if (definition.name.empty()) {
     throw CodedError("ERR_INVALID_DEFINITION", "Expo module name cannot be empty.");
   }
+
   validateFunctions(definition.functions, definition.name);
   validateProperties(definition.properties, definition.name);
   requireUniqueNames(definition.classes, definition.name, "class");
@@ -331,12 +337,14 @@ void validateModuleDefinition(const ModuleDefinition &definition) {
           "ERR_INVALID_DEFINITION",
           owner + " has no ArkTS SharedObject constructor adapter.");
     }
+
     const auto constructorRequiredArity = klass.constructorRequiredArity.value_or(klass.constructorArity);
     if (constructorRequiredArity > klass.constructorArity) {
       throw CodedError(
           "ERR_INVALID_DEFINITION",
           owner + " has an invalid constructor argument count.");
     }
+
     requireUniqueNames(klass.functions, owner, "function");
     validateProperties(klass.properties, owner);
     validateFunctions(klass.staticFunctions, owner);
@@ -383,6 +391,7 @@ void validateModuleDefinition(const ModuleDefinition &definition) {
             "ERR_INVALID_DEFINITION",
             definition.name + "." + klass.name + "." + function.name + " has no native body.");
       }
+
       const auto requiredArity = function.requiredArity.value_or(function.arity);
       if (requiredArity > function.arity) {
         throw CodedError(
@@ -409,6 +418,7 @@ void validateModuleDefinition(const ModuleDefinition &definition) {
           "ERR_INVALID_DEFINITION",
           owner + " has an empty or duplicate view prototype name.");
     }
+
     validateFunctions(view.functions, owner);
     std::unordered_set<std::string> props;
     for (const auto &prop : view.props) {

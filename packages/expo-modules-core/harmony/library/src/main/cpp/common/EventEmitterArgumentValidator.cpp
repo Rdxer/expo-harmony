@@ -17,6 +17,7 @@ const char *hostFunctionName(HostFunction function) noexcept {
     case HostFunction::RemoveSubscription:
       return "removeSubscription";
   }
+
   return "unknown";
 }
 
@@ -36,6 +37,7 @@ const char *validateArguments(
       if (!shape.secondIsFunction) {
         return "expected the listener to be a function";
       }
+
       return nullptr;
     case HostFunction::RemoveAllListeners:
     case HostFunction::Emit:
@@ -43,6 +45,7 @@ const char *validateArguments(
       if (count < 1) {
         return "expected an event name";
       }
+
       return shape.firstIsString
           ? nullptr
           : "expected the event name to be a string";
@@ -50,10 +53,12 @@ const char *validateArguments(
       if (count < 1) {
         return "expected a subscription";
       }
+
       return shape.firstIsObject
           ? nullptr
           : "expected the subscription to be an object";
   }
+
   return "received invalid arguments";
 }
 

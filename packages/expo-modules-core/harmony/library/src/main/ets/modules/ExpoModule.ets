@@ -389,6 +389,7 @@ export class ExpoModuleContext {
     if (this.moduleName !== undefined) {
       throw new Error('An ExpoModuleContext cannot be bound more than once.');
     }
+
     this.moduleName = name;
     this.declaredEvents = new Set<string>(events);
     this.declaredEventPayloadTypes = new Map<string, ExpoValueType<ESObject>>(eventPayloadTypes);
@@ -596,10 +597,12 @@ export class ExpoModuleContext {
         if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
           throw new ExpoModuleError('ERR_INVALID_VIEW_TAG', `${path} expected ${expected}, received ${ExpoValueConverter.actualType(value)}.`);
         }
+
         const view = this.findView(value, componentName);
         if (view === undefined) {
           throw new ExpoModuleError('ERR_VIEW_NOT_FOUND', `${path} cannot resolve ${expected} ${value} in the current runtime.`);
         }
+
         return view as ViewType;
       },
       (_value: ViewType, path: string): ESObject => {
@@ -911,8 +914,10 @@ export class ExpoModuleDefinition {
     if (this.eventPayloadTypes.has(name)) {
       throw new Error(`Expo module event '${name}' already has a payload type.`);
     }
+
     this.eventNames.add(name);
     this.eventPayloadTypes.set(name, payloadType as ExpoValueType<ESObject>);
+
     return this;
   }
 
@@ -1199,6 +1204,7 @@ export class ExpoModuleDefinition {
       this.startObservingByEvent.get(eventName)?.forEach((body: ExpoModuleLifecycleBody): void => body());
       return;
     }
+
     this.stopObservingByEvent.get(eventName)?.forEach((body: ExpoModuleLifecycleBody): void => body());
     this.stopObservingBodies.forEach((body: ExpoModuleObservationBody): void => body(eventName));
   }
@@ -1228,6 +1234,7 @@ export class ExpoModuleDefinition {
     if (async && writableArguments.length > 0) {
       throw new ExpoModuleError('ERR_WRITABLE_ARGUMENT', 'Writable arguments are supported only by synchronous module functions.');
     }
+
     this.functionValues.set(name, {
       descriptor: { name, arity: arity.maximum, requiredArity: arity.required, async, writableArguments },
       syncBody,
@@ -1290,6 +1297,7 @@ export class ExpoModuleDefinition {
     if (body === undefined) {
       throw new Error(`Expo module ${hookName}('${eventName}', ...) requires a callback.`);
     }
+
     let bodies = registrations.get(eventName);
     if (bodies === undefined) {
       bodies = [];
@@ -1365,21 +1373,23 @@ class ExpoModulesRuntimeScope implements ExpoLifecycleSink {
           initialWant,
         );
         let viewDisposers: (() => void)[] = [];
-        let registrationPhase: string = 'constructing the module';
+        let phase: string = 'constructing the module';
+        let definition: ExpoModuleDefinition | undefined = undefined;
 
         try {
           const module = registration.factory(context);
-          registrationPhase = 'evaluating the module definition';
-          const definition = module.definition();
 
-          registrationPhase = 'resolving the module name';
+          phase = 'evaluating the module definition';
+          definition = module.definition();
+
+          phase = 'resolving the module name';
           definition.applyNameFallback(registration.moduleClassName);
           const moduleName = definition.moduleNameValue();
           if (this.modules.has(moduleName)) {
             throw new Error(`Expo module '${moduleName}' was registered more than once.`);
           }
 
-          registrationPhase = 'binding the module context';
+          phase = 'binding the module context';
           context.bindModule(
             moduleName,
             definition.eventNamesValue(),
@@ -1388,30 +1398,39 @@ class ExpoModulesRuntimeScope implements ExpoLifecycleSink {
             typedEvents,
             (name: string): ExpoModule | undefined => this.modules.get(name)?.module,
           );
-          registrationPhase = 'binding shared objects and views';
+
+          phase = 'binding shared objects and views';
           viewDisposers = definition.bindModuleContext(context, this.sharedObjects);
 
-          registrationPhase = 'creating the module descriptor';
+          phase = 'creating the module descriptor';
           const descriptor = definition.descriptor();
           const scopedModule = new ScopedExpoModule(registrationId, module, definition, descriptor, viewDisposers);
+
           this.modules.set(descriptor.name, scopedModule);
           this.order.push(scopedModule);
         } catch (error) {
+          context.beginInvalidation();
+          try {
+            definition?.dispatchLifecycle(EXPO_LIFECYCLE_DESTROY);
+          } catch (cleanupError) {
+            reportModuleLifecycleFailure(registrationId, 'registration rollback', cleanupError);
+          }
+
           disposeViewRegistrations(viewDisposers);
           context.invalidate();
 
           if (error instanceof ExpoModuleError) {
             throw new ExpoModuleError(
               error.code,
-              `Unable to register Expo module '${registrationId}' while ${registrationPhase}: ${error.message}`,
+              `Unable to register Expo module '${registrationId}' while ${phase}: ${error.message}`,
               error.cause,
               error.path,
             );
           }
           if (error instanceof Error) {
-            throw new Error(`Unable to register Expo module '${registrationId}' while ${registrationPhase}: ${error.message}`);
+            throw new Error(`Unable to register Expo module '${registrationId}' while ${phase}: ${error.message}`);
           }
-          throw new Error(`Unable to register Expo module '${registrationId}' while ${registrationPhase}: ${errorMessage(error)}`);
+          throw new Error(`Unable to register Expo module '${registrationId}' while ${phase}: ${errorMessage(error)}`);
         }
       });
 
@@ -1545,20 +1564,17 @@ class ExpoModulesRuntimeScope implements ExpoLifecycleSink {
   async prepareForReload(): Promise<void> {
     this.assertValid();
 
+    // Preparation may permanently close author resources. Once started, always
+    // visit every module and proceed to replace this runtime.
     for (let index = 0; index < this.order.length; index += 1) {
       const entry = this.order[index];
       if (!entry.created) continue;
       try {
         await entry.definition.prepareForReload();
       } catch (error) {
-        if (error instanceof ExpoModuleError) {
-          throw new ExpoModuleError(error.code, error.message, error.cause, error.path);
-        }
-        if (error instanceof Error) {
-          throw new Error(error.message);
-        }
-        throw new Error(errorMessage(error));
+        reportModuleLifecycleFailure(entry.descriptor.name, 'onPrepareForReload', error);
       }
+      if (!this.valid) return;
     }
   }
 
@@ -1580,12 +1596,11 @@ class ExpoModulesRuntimeScope implements ExpoLifecycleSink {
 
     for (let index = this.order.length - 1; index >= 0; --index) {
       const entry = this.order[index];
-      if (entry.created) {
-        try {
-          entry.definition.dispatchLifecycle(EXPO_LIFECYCLE_DESTROY);
-        } catch (error) {
-          reportModuleLifecycleFailure(entry.descriptor.name, 'onDestroy', error);
-        }
+      // Constructors and partial onCreate hooks may already own resources.
+      try {
+        entry.definition.dispatchLifecycle(EXPO_LIFECYCLE_DESTROY);
+      } catch (error) {
+        reportModuleLifecycleFailure(entry.descriptor.name, 'onDestroy', error);
       }
     }
     // Release SharedObjects while their AppContext is still live.
@@ -1624,7 +1639,9 @@ export class ExpoModulesRegistry {
   private readonly pendingLifecycle: ExpoLifecycleEventQueue = new ExpoLifecycleEventQueue();
   private readonly scopes: Map<string, ExpoModulesRuntimeScope> = new Map<string, ExpoModulesRuntimeScope>();
   private reloadHost?: ExpoRuntimeReload = undefined;
+  private assertReloadAvailable?: () => void = undefined;
   private reloadInProgress: boolean = false;
+  private reloadFailed: boolean = false;
   private abilityDestroyed: boolean = false;
   private valid: boolean = true;
 
@@ -1676,7 +1693,7 @@ export class ExpoModulesRegistry {
   }
 
   /** @internal Binds the owning TurboModule's cleanup-aware reload operation. */
-  configureReloadHost(reloadHost: ExpoRuntimeReload): void {
+  configureReloadHost(reloadHost: ExpoRuntimeReload, assertAvailable?: () => void): void {
     this.assertValid();
 
     if (this.reloadHost !== undefined) {
@@ -1684,6 +1701,7 @@ export class ExpoModulesRegistry {
     }
 
     this.reloadHost = reloadHost;
+    this.assertReloadAvailable = assertAvailable;
   }
 
   bindRuntime(runtimeEpoch: string): void {
@@ -1810,6 +1828,7 @@ export class ExpoModulesRegistry {
       throw new ExpoModuleError('ERR_RELOAD_IN_PROGRESS', 'An Expo modules Host reload is already in progress.');
     }
 
+    this.assertReloadAvailable?.();
     this.reloadInProgress = true;
     try {
       await this.prepareForReload();
@@ -1817,7 +1836,9 @@ export class ExpoModulesRegistry {
       this.assertValid();
       await reloadHost(reason);
     } catch (error) {
-      if (this.valid) this.reloadInProgress = false;
+      // Close public admission, but retain resources until the native destroy
+      // acknowledgement (or per-runtime retirement) permits final cleanup.
+      this.reloadFailed = true;
 
       if (error instanceof ExpoModuleError) {
         throw new ExpoModuleError(error.code, error.message, error.cause, error.path);
@@ -1830,7 +1851,8 @@ export class ExpoModulesRegistry {
   }
 
   setObserving(runtimeEpoch: string, moduleName: string, eventName: string, observing: boolean): void {
-    this.requireScope(runtimeEpoch).setObserving(moduleName, eventName, observing);
+    if (observing) this.requireScope(runtimeEpoch).setObserving(moduleName, eventName, true);
+    else this.scopes.get(runtimeEpoch)?.setObserving(moduleName, eventName, false);
   }
 
   constructSharedObject(
@@ -1912,7 +1934,8 @@ export class ExpoModulesRegistry {
     eventName: string,
     observing: boolean,
   ): void {
-    this.requireScope(runtimeEpoch).sharedObjects.setObserving(objectId, moduleName, className, eventName, observing);
+    if (observing) this.requireScope(runtimeEpoch).sharedObjects.setObserving(objectId, moduleName, className, eventName, true);
+    else this.scopes.get(runtimeEpoch)?.sharedObjects.setObserving(objectId, moduleName, className, eventName, false);
   }
 
   releaseSharedObject(runtimeEpoch: string, objectId: number): void {
@@ -1938,8 +1961,8 @@ export class ExpoModulesRegistry {
 
   /** @internal Drops an event whose native receiver was already invalidated. */
   discardTypedEventArguments(runtimeEpoch: string, transportId: number): void {
-    this.assertValid();
-    const scope: ExpoModulesRuntimeScope = this.requireScope(runtimeEpoch);
+    const scope = this.scopes.get(runtimeEpoch);
+    if (scope === undefined) return;
     const args: ESObject[] = this.typedEvents.take(runtimeEpoch, transportId);
     scope.sharedObjects.discardEncodedArguments(args);
   }
@@ -2003,8 +2026,8 @@ export class ExpoModulesRegistry {
   }
 
   private assertValid(): void {
-    if (!this.valid) {
-      throw new Error('The ArkTS Expo modules scope has been invalidated.');
+    if (!this.valid || this.reloadFailed) {
+      throw new Error('The ArkTS Expo modules scope has been invalidated or its Host reload failed.');
     }
   }
 }

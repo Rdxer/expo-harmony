@@ -31,3 +31,5 @@ export {
   ExpoValueTypes,
 } from './modules/ExpoValueConverter';
 export { ExpoSharedObject, ExpoSharedObjectTypes, ExpoSharedRef, ExpoSharedObjectClassDefinition } from './modules/ExpoSharedObject';
+
+export { ExpoRNApp } from './ExpoRNApp';

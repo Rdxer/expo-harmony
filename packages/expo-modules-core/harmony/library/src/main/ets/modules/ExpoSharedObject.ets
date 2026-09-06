@@ -232,6 +232,7 @@ export abstract class ExpoSharedObject {
     if (!binding.events.has(eventName)) {
       throw new Error(`Expo SharedObject '${binding.moduleName}.${binding.className}' did not declare event '${eventName}'.`);
     }
+
     const value: ESObject | void = this.requireClassDefinition().toBridgeEventPayload(eventName, payload as ESObject);
     this.context.sendSharedObjectEvent(
       binding.runtimeEpoch,
@@ -270,6 +271,7 @@ export abstract class ExpoSharedObject {
       if (this.binding.runtimeEpoch === binding.runtimeEpoch && this.binding.objectId === binding.objectId) return;
       throw new Error('An Expo SharedObject cannot have two live JavaScript identities.');
     }
+
     this.context.assertRuntimeEpoch(binding.runtimeEpoch);
     const definition = this.requireClassDefinition();
     definition.assertBinding(binding.moduleName, binding.className, binding.nativeRefType);
@@ -502,7 +504,9 @@ export class ExpoSharedObjectClassDefinition<ObjectType extends ExpoSharedObject
         if (object.requireClassDefinition() !== this) {
           throw new ExpoModuleError('ERR_INVALID_SHARED_OBJECT_CLASS', `${path} expected ${expected}, received another Expo SharedObject class.`);
         }
+
         this.assertReturnRefType(object, path);
+
         return object as ESObject;
       },
     );
@@ -525,6 +529,7 @@ export class ExpoSharedObjectClassDefinition<ObjectType extends ExpoSharedObject
     if (this.constantValues.has(name) || this.staticFunctionValues.has(name)) {
       throw new Error(`Expo SharedObject static member '${this.className}.${name}' was defined more than once.`);
     }
+
     const getter: ExpoSharedObjectConstantGetter =
       typeof valueOrGetter === 'function'
         ? (): ESObject | void =>
@@ -535,7 +540,9 @@ export class ExpoSharedObjectClassDefinition<ObjectType extends ExpoSharedObject
             )
         : (): ESObject | void =>
             ExpoValueConverter.toBridge(valueOrGetter as ESObject, undefined, `Expo SharedObject constant '${this.qualifiedName()}.${name}'`);
+
     this.constantValues.set(name, { name, getter });
+
     return this;
   }
 
@@ -544,10 +551,12 @@ export class ExpoSharedObjectClassDefinition<ObjectType extends ExpoSharedObject
     if (this.constantValues.has(name) || this.staticFunctionValues.has(name)) {
       throw new Error(`Expo SharedObject static member '${this.className}.${name}' was defined more than once.`);
     }
+
     this.constantValues.set(name, {
       name,
       getter: (): ESObject | void => ExpoValueConverter.toBridge(getter(), type, `Expo SharedObject constant '${this.qualifiedName()}.${name}'`),
     });
+
     return this;
   }
 
@@ -608,6 +617,7 @@ export class ExpoSharedObjectClassDefinition<ObjectType extends ExpoSharedObject
     if (this.propertyValues.has(name) || this.functionValues.has(name)) {
       throw new Error(`Expo SharedObject member '${this.className}.${name}' was defined more than once.`);
     }
+
     let type: ExpoValueType<Value> | undefined = undefined;
     let getter: ExpoFunction1<ObjectType, Value>;
     let setter: ExpoFunction2<ObjectType, Value, void> | undefined = undefined;
@@ -632,6 +642,7 @@ export class ExpoSharedObjectClassDefinition<ObjectType extends ExpoSharedObject
         ExpoValueConverter.toBridge(getter(object), type, `Expo SharedObject property '${this.qualifiedName()}.${name}'`),
       setter: bridgeSetter,
     });
+
     return this;
   }
 
@@ -649,8 +660,10 @@ export class ExpoSharedObjectClassDefinition<ObjectType extends ExpoSharedObject
     if (this.eventPayloadTypes.has(name)) {
       throw new Error(`Expo SharedObject event '${this.className}.${name}' already has a payload type.`);
     }
+
     this.eventNames.add(name);
     this.eventPayloadTypes.set(name, payloadType as ExpoValueType<ESObject>);
+
     return this;
   }
 
@@ -827,7 +840,7 @@ export class ExpoSharedObjectClassDefinition<ObjectType extends ExpoSharedObject
 
   /** @internal */
   notifyObserving(object: ExpoSharedObject, eventName: string, observing: boolean): void {
-    if (!this.eventNames.has(eventName)) {
+    if (this.registry?.eventDefinition(this.moduleNameValue(), this.className, eventName) === undefined) {
       throw new Error(`Expo SharedObject '${this.qualifiedName()}' did not declare event '${eventName}'.`);
     }
 
@@ -838,7 +851,11 @@ export class ExpoSharedObjectClassDefinition<ObjectType extends ExpoSharedObject
   /** @internal Keeps event conversion on the same path as returns and properties. */
   toBridgeEventPayload(eventName: string, payload: ESObject): ESObject | void {
     if (!this.eventNames.has(eventName)) {
-      throw new Error(`Expo SharedObject '${this.qualifiedName()}' did not declare event '${eventName}'.`);
+      const inherited = this.registry?.eventDefinition(this.moduleNameValue(), this.className, eventName);
+      if (inherited === undefined) {
+        throw new Error(`Expo SharedObject '${this.qualifiedName()}' did not declare event '${eventName}'.`);
+      }
+      return inherited.toBridgeEventPayload(eventName, payload);
     }
     return ExpoValueConverter.toBridge(
       payload,
@@ -1047,7 +1064,7 @@ export class ExpoSharedObjectRegistry {
         className,
         nativeRefType,
         this.classLineage(moduleName, className),
-        definition.declaredEvents(),
+        this.inheritedEvents(moduleName, className),
       ),
       this,
     );
@@ -1107,7 +1124,7 @@ export class ExpoSharedObjectRegistry {
         className,
         nativeRefType,
         this.classLineage(moduleName, className),
-        definition.declaredEvents(),
+        this.inheritedEvents(moduleName, className),
       ),
       this,
     );
@@ -1187,16 +1204,19 @@ export class ExpoSharedObjectRegistry {
     if (object === undefined) {
       throw new Error(`Cannot read memory pressure for unknown Expo SharedObject ${objectId}.`);
     }
+
     const value = object.getAdditionalMemoryPressure();
     if (!Number.isInteger(value) || value < 0 || value > 9007199254740991) {
       throw new Error('Expo SharedObject memory pressure must be a non-negative safe integer.');
     }
+
     return value;
   }
 
   release(objectId: number): void {
     const object = this.objects.get(objectId);
     if (object === undefined) return;
+
     this.objects.delete(objectId);
     this.resolvedAuthors.forEach((resolved: ExpoSharedObject, authorId: number): void => {
       if (resolved === object) this.resolvedAuthors.delete(authorId);
@@ -1206,6 +1226,7 @@ export class ExpoSharedObjectRegistry {
 
   invalidate(): void {
     if (!this.valid) return;
+
     this.valid = false;
     const objectIds = Array.from(this.objects.keys());
     objectIds.forEach((objectId: number): void => this.release(objectId));
@@ -1361,7 +1382,7 @@ export class ExpoSharedObjectRegistry {
 
     const kind = typeof value;
 
-    if (kind === 'string' || kind === 'number' || kind === 'boolean') return value;
+    if (kind === 'string' || kind === 'number' || kind === 'boolean' || kind === 'function') return value;
 
     if (Array.isArray(value)) {
       return value.map((item: ESObject): ESObject => this.decodeValue(item, depth + 1));
@@ -1527,6 +1548,32 @@ export class ExpoSharedObjectRegistry {
     }
   }
 
+  /** @internal Resolve lazily: a base module may be registered after its child. */
+  eventDefinition(moduleName: string, className: string, eventName: string): ExpoSharedObjectClassRuntime | undefined {
+    this.assertValid();
+    const lineage = this.classLineage(moduleName, className);
+    for (let index = 0; index < lineage.length; index += 1) {
+      const identity = lineage[index];
+      const definition = this.classes.get(sharedClassKey(identity.moduleName, identity.className));
+      if (definition?.declaredEvents().includes(eventName)) return definition;
+    }
+
+    return undefined;
+  }
+
+  private inheritedEvents(moduleName: string, className: string): string[] {
+    const events: Set<string> = new Set<string>();
+    this.classLineage(moduleName, className).forEach((identity: ExpoSharedObjectClassIdentity): void => {
+      this.classes
+        .get(sharedClassKey(identity.moduleName, identity.className))
+        ?.declaredEvents()
+        .forEach((name: string): void => {
+          events.add(name);
+        });
+    });
+    return Array.from(events);
+  }
+
   private requireObject(objectId: number, moduleName: string, className: string): ExpoSharedObject {
     this.assertValid();
 
@@ -1541,7 +1588,7 @@ export class ExpoSharedObjectRegistry {
     if (
       binding === undefined ||
       binding.runtimeEpoch !== this.runtimeEpoch ||
-      binding.moduleName !== moduleName ||
+      binding.objectId !== objectId ||
       !this.isClassAssignable(binding, moduleName, className)
     ) {
       throw new Error(`Expo SharedObject ${objectId} is not an instance of '${moduleName}.${className}'.`);
@@ -1610,6 +1657,7 @@ export class ExpoSharedObjectRegistry {
       if (index === 0 && (moduleNameValue !== actualModule || classNameValue !== actualClass)) {
         throw new Error('Expo SharedObject argument class lineage does not match its canonical class.');
       }
+
       const key: string = sharedClassKey(moduleNameValue, classNameValue);
       if (seen.has(key)) {
         throw new Error('Expo SharedObject argument class lineage contains a cycle.');

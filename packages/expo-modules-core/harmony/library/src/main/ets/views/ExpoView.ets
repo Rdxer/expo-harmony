@@ -168,15 +168,25 @@ struct ExpoView {
 
       ExpoViewAdapterRegistry.markPropsCommitted(this.ctx.rnInstance.getId(), this.tag, this.logicalComponentName, requiredRevision);
     } catch (error) {
-      const failure: Error = toViewUpdateError(this.tag, revision, error);
+      const suffix: string = revision === undefined ? 'an invalid revision' : `revision ${revision}`;
+      const detail: string = error instanceof Error ? error.message : String(error);
+      const message: string = `Expo view tag ${this.tag} failed to apply ${suffix}: ${detail}`;
+
       if (this.isBound) {
         try {
-          ExpoViewAdapterRegistry.markPropsFailed(this.ctx.rnInstance.getId(), this.tag, this.logicalComponentName, revision, failure);
+          ExpoViewAdapterRegistry.markPropsFailed(
+            this.ctx.rnInstance.getId(),
+            this.tag,
+            this.logicalComponentName,
+            revision,
+            new ExpoModuleError('ERR_VIEW_PROPS_UPDATE_FAILED', message, error) as Error,
+          );
         } catch (registryError) {
           reportViewCleanupFailure('props failure state', registryError);
         }
       }
-      throw failure;
+
+      throw new ExpoModuleError('ERR_VIEW_PROPS_UPDATE_FAILED', message, error);
     }
   }
 
@@ -263,14 +273,6 @@ function reportViewCleanupFailure(step: string, error: Object): void {
   try {
     console.error(`Expo View cleanup failed for ${step}: ${message}`);
   } catch (_) {}
-}
-
-function toViewUpdateError(tag: number, revision: number | undefined, error: Object): Error {
-  const suffix: string = revision === undefined ? 'an invalid revision' : `revision ${revision}`;
-  if (error instanceof Error) {
-    return new ExpoModuleError('ERR_VIEW_PROPS_UPDATE_FAILED', `Expo view tag ${tag} failed to apply ${suffix}: ${error.message}`, error);
-  }
-  return new ExpoModuleError('ERR_VIEW_PROPS_UPDATE_FAILED', `Expo view tag ${tag} failed to apply ${suffix}: ${String(error)}`, error);
 }
 
 function reportViewUpdateFailure(tag: number, componentName: string, error: Object): void {

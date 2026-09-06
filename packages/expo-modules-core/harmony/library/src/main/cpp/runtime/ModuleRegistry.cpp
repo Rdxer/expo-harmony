@@ -27,6 +27,7 @@ std::vector<std::string> viewComponentNames(
       names.push_back(std::move(defaultName));
     }
   }
+
   return names;
 }
 
@@ -60,6 +61,7 @@ void validateClassInheritanceGraph(
             "ERR_CLASS_NOT_FOUND",
             "Base class '" + baseModuleName + "." + baseClassName + "' required by '" + moduleName + "." + klass.name + "' is not registered.");
       }
+
       baseByClass.emplace(std::move(qualifiedClass), std::move(qualifiedBase));
     }
   }
@@ -76,6 +78,7 @@ void validateClassInheritanceGraph(
           "ERR_CLASS_INHERITANCE_CYCLE",
           "Native class inheritance contains a cycle at '" + name.substr(0, separator) + "." + name.substr(separator + 1) + "'.");
     }
+
     state = 1;
     if (auto base = baseByClass.find(name); base != baseByClass.end()) {
       visit(base->second);
@@ -101,10 +104,12 @@ void ModuleRegistry::initialize() {
   if (initialized_) {
     return;
   }
+
   auto context = context_.lock();
   if (!context) {
     throw CodedError("ERR_RUNTIME_DESTROYED", "Cannot initialize modules after runtime destruction.");
   }
+
   registerModule(std::make_shared<CoreModule>(context));
   // ArkTS modules share one generic native adapter.
   for (auto &module : ArkTSModuleAdapter::createModules(context)) {
@@ -118,12 +123,14 @@ void ModuleRegistry::registerModule(std::shared_ptr<ExpoModule> module) {
   if (!module) {
     throw CodedError("ERR_INVALID_DEFINITION", "Expo module factory returned null.");
   }
+
   auto context = context_.lock();
   if (!context || !context->isAlive()) {
     throw CodedError(
         "ERR_RUNTIME_DESTROYED",
         "Cannot register an Expo module after runtime destruction.");
   }
+
   auto definition = module->definition();
   validateModuleDefinition(definition);
   auto name = definition.name;
@@ -158,6 +165,7 @@ void ModuleRegistry::registerModule(std::shared_ptr<ExpoModule> module) {
           "ERR_VIEW_NOT_REGISTERED",
           "Fabric component '" + nativeComponentName + "' required by Expo module '" + retained->name + "' was not registered before React initialized its component registry.");
     }
+
     for (const auto &componentName : viewComponentNames(*retained, view)) {
       if (!newViews.emplace(componentName, true).second) {
         throw CodedError(
@@ -216,6 +224,7 @@ bool ModuleRegistry::isSharedRefClass(
     if (!module) {
       return false;
     }
+
     const auto definition = std::find_if(
         module->classes.begin(),
         module->classes.end(),
@@ -231,6 +240,7 @@ bool ModuleRegistry::isSharedRefClass(
     if (definition->baseClassName.empty() || definition->baseClassName == "SharedObject") {
       return false;
     }
+
     const auto separator = definition->baseClassName.find('.');
     if (separator == std::string::npos) {
       currentClass = definition->baseClassName;
@@ -239,6 +249,7 @@ bool ModuleRegistry::isSharedRefClass(
       currentClass = definition->baseClassName.substr(separator + 1);
     }
   }
+
   return false;
 }
 
@@ -272,6 +283,7 @@ SharedObjectClassLineage ModuleRegistry::sharedObjectClassLineage(
       currentClass = definition->baseClassName.substr(separator + 1);
     }
   }
+
   return result;
 }
 

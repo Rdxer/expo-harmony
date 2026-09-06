@@ -25,6 +25,7 @@ public:
     if (runtime_ == runtime && objectId_ == objectId) {
       return SharedObjectBindResult::AlreadyBound;
     }
+
     return SharedObjectBindResult::RuntimeConflict;
   }
 

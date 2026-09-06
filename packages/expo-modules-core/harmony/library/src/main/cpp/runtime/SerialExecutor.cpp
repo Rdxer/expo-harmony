@@ -21,6 +21,7 @@ bool SerialExecutor::dispatch(std::function<void()> task) {
   if (!task) {
     return false;
   }
+
   {
     std::scoped_lock lock(state_->mutex);
     if (!state_->accepting) {
@@ -29,6 +30,7 @@ bool SerialExecutor::dispatch(std::function<void()> task) {
     state_->tasks.push_back(std::move(task));
   }
   state_->condition.notify_one();
+
   return true;
 }
 
@@ -87,6 +89,7 @@ bool SerialExecutor::shutdown(
       worker.join();
       return true;
     }
+
     // Keep the check and callback registration under State's mutex.
     if (onStopped && !state->onStopped) {
       state->onStopped = std::move(onStopped);
@@ -109,6 +112,7 @@ bool SerialExecutor::shutdown(
     }
     return false;
   }
+
   state->condition.wait_for(lock, waitDuration, [&] {
     return state->stopped || state->detached;
   });
@@ -118,6 +122,7 @@ bool SerialExecutor::shutdown(
   if (onStopped && !state->onStopped) {
     state->onStopped = std::move(onStopped);
   }
+
   return false;
 }
 
@@ -136,6 +141,7 @@ void SerialExecutor::run(const std::shared_ptr<State> &state) noexcept {
     if (!state->errorHandler) {
       return;
     }
+
     try {
       state->errorHandler(std::move(message));
     } catch (...) {
@@ -170,6 +176,7 @@ void SerialExecutor::run(const std::shared_ptr<State> &state) noexcept {
         }
         return;
       }
+
       task = std::move(state->tasks.front());
       state->tasks.pop_front();
     }

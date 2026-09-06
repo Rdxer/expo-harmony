@@ -1,4 +1,5 @@
 import type { RNComponentContext } from '@rnoh/react-native-openharmony';
+import { ExpoModuleError } from '../modules/ExpoModuleError';
 import { EXPO_MODULES_CORE_VIEW_COMPONENT_NAME, EXPO_MODULE_NAME_PROP, EXPO_VIEW_REVISION_PROP, EXPO_VIEW_NAME_PROP } from '../protocol/Protocol';
 export { EXPO_MODULES_CORE_VIEW_COMPONENT_NAME, EXPO_MODULE_NAME_PROP, EXPO_VIEW_REVISION_PROP, EXPO_VIEW_NAME_PROP } from '../protocol/Protocol';
 
@@ -142,6 +143,7 @@ export class ExpoViewAdapterRegistry {
       componentNames.forEach((componentName: string): void => {
         const currentRegistrations = current?.get(componentName);
         if (currentRegistrations === undefined) return;
+
         const index = currentRegistrations.indexOf(registration);
         if (index < 0) return;
 
@@ -365,7 +367,13 @@ export class ExpoViewAdapterRegistry {
     if (bound.committedPropsRevision >= revision) return;
 
     if (bound.propsFailure !== undefined && (bound.propsFailure.revision === undefined || revision <= bound.propsFailure.revision)) {
-      throw bound.propsFailure.error;
+      const error = bound.propsFailure.error;
+
+      if (error instanceof ExpoModuleError) {
+        throw new ExpoModuleError(error.code, error.message, error.cause, error.path);
+      }
+
+      throw new Error(error.message);
     }
 
     await new Promise<void>((resolve: () => void, reject: (error: Error) => void): void => {

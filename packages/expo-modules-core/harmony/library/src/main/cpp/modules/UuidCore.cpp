@@ -86,6 +86,7 @@ std::array<uint8_t, 20> sha1(const std::vector<uint8_t> &input) {
     result[index * 4 + 2] = static_cast<uint8_t>(hash[index] >> 8U);
     result[index * 4 + 3] = static_cast<uint8_t>(hash[index]);
   }
+
   return result;
 }
 
@@ -99,6 +100,7 @@ uint8_t parseHex(char character) {
   if (character >= 'A' && character <= 'F') {
     return character - 'A' + 10;
   }
+
   throw std::invalid_argument("UUID namespace contains a non-hex character");
 }
 
@@ -107,6 +109,7 @@ std::array<uint8_t, 16> parseUuid(const std::string &value) {
   if (value.size() != 36 || std::any_of(separators.begin(), separators.end(), [&value](size_t index) { return value[index] != '-'; })) {
     throw std::invalid_argument("UUID namespace does not use the 8-4-4-4-12 format");
   }
+
   std::string hex;
   hex.reserve(32);
   for (size_t index = 0; index < value.size(); ++index) {
@@ -119,6 +122,7 @@ std::array<uint8_t, 16> parseUuid(const std::string &value) {
     result[index] = static_cast<uint8_t>(
         (parseHex(hex[index * 2]) << 4U) | parseHex(hex[index * 2 + 1]));
   }
+
   return result;
 }
 
@@ -133,6 +137,7 @@ std::string formatUuid(const std::array<uint8_t, 16> &bytes) {
     }
     output << std::setw(2) << static_cast<unsigned>(bytes[index]);
   }
+
   return output.str();
 }
 
@@ -152,6 +157,7 @@ std::string uuidV5Core(const std::string &name, const std::string &nameSpace) {
   std::array<uint8_t, 16> bytes{};
   std::copy_n(digest.begin(), bytes.size(), bytes.begin());
   applyUuidVersionAndVariant(bytes, 5);
+
   return formatUuid(bytes);
 }
 

@@ -17,6 +17,7 @@ public:
     if (released_.exchange(true, std::memory_order_acq_rel)) {
       return;
     }
+
     try {
       if (release_) {
         release_();
@@ -32,6 +33,30 @@ public:
 private:
   std::atomic_bool released_{false};
   std::function<void()> release_;
+};
+
+// Owns retention until a settlement hands it to the JS delivery/discard path.
+// The MAIN task and NAPI callbacks may disappear as soon as dispatch returns.
+class AsyncSettlementLifetime final {
+public:
+  explicit AsyncSettlementLifetime(std::function<void()> release)
+      : release_(std::make_shared<OneShotReleaseState>(std::move(release))) {}
+
+  AsyncSettlementLifetime(const AsyncSettlementLifetime &) = delete;
+  AsyncSettlementLifetime &operator=(const AsyncSettlementLifetime &) = delete;
+
+  ~AsyncSettlementLifetime() noexcept {
+    if (release_) {
+      release_->release();
+    }
+  }
+
+  std::shared_ptr<OneShotReleaseState> transferToDelivery() noexcept {
+    return std::exchange(release_, nullptr);
+  }
+
+private:
+  std::shared_ptr<OneShotReleaseState> release_;
 };
 
 // Converts discarded executor callbacks into one-shot releases without touching JSI off-thread.

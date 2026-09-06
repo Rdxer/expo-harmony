@@ -54,6 +54,7 @@ ExpoViewComponentRegistry::descriptorProviders() {
         flavor,
         &react::concreteComponentDescriptorConstructor<expo::ExpoViewComponentDescriptor>});
   }
+
   return result;
 }
 

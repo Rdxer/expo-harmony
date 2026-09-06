@@ -37,6 +37,7 @@ std::string limitedDiagnostic(const char *message) {
       result.end(),
       [](unsigned char character) { return character < 0x20U; },
       ' ');
+
   return result;
 }
 
@@ -50,9 +51,11 @@ std::string normalizeEventName(std::string name) {
   if (prefixLength == 0) {
     return name;
   }
+
   name.erase(0, prefixLength);
   name[0] = static_cast<char>(
       std::tolower(static_cast<unsigned char>(name[0])));
+
   return name;
 }
 
@@ -64,19 +67,23 @@ public:
     if (context.messageName != protocol::kLifecycleEvent || !context.messagePayload.isObject()) {
       return;
     }
+
     const auto eventName = context.messagePayload.getDefault("eventName", "");
     const auto payload = context.messagePayload.getDefault("payload", nullptr);
     if (!eventName.isString() || eventName.asString() != protocol::kLifecycleDestroy || !payload.isObject()) {
       return;
     }
+
     const auto requestId = payload.getDefault("requestId", "");
     if (!requestId.isString() || requestId.asString().empty()) {
       return;
     }
+
     auto instance = std::dynamic_pointer_cast<rnoh::RNInstanceInternal>(context.rnInstance.lock());
     if (!instance) {
       return;
     }
+
     // RNOH 0.84 exposes its executor through RNInstanceInternal.
     instance->getTaskExecutor()->runTask(
         rnoh::TaskThread::JS,
@@ -85,6 +92,7 @@ public:
           if (!instance) {
             return;
           }
+
           auto core = instance->getTurboModule<ExpoModulesCoreTurboModule>("ExpoModulesCore");
           if (core) {
             core->beginDestroy(requestId);
@@ -100,11 +108,13 @@ public:
     if (!context.shadowViewRegistry) {
       return;
     }
+
     auto eventEmitter = context.shadowViewRegistry
                             ->getEventEmitter<expo::ExpoViewEventEmitter>(context.tag);
     if (!eventEmitter) {
       return;
     }
+
     try {
       auto payload = ArkJS(context.env).getDynamic(context.payload);
       eventEmitter->dispatch(
@@ -144,6 +154,7 @@ public:
     if (!state) {
       return;
     }
+
     try {
       auto dynamicState = ArkJS(context.env).getDynamic(context.newState);
       if (!dynamicState.isObject()) {

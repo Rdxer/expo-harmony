@@ -18,6 +18,7 @@
 #include <react/bridging/LongLivedObject.h>
 
 #include "api/Promise.h"
+#include "common/JSI/RecordProperty.h"
 #include "common/SharedObject.h"
 #include "errors/CodedError.h"
 #include "modules/ArkTSTypedBridge.h"
@@ -84,10 +85,12 @@ std::optional<uint64_t> readTransportInteger(const folly::dynamic &value) {
   if (!value.isDouble()) {
     return std::nullopt;
   }
+
   const auto number = value.asDouble();
   if (!std::isfinite(number) || std::trunc(number) != number || number < 0 || number > kMaxSafeTransportInteger) {
     return std::nullopt;
   }
+
   return static_cast<uint64_t>(number);
 }
 
@@ -236,6 +239,7 @@ void loadMemoryPressure(
         "ERR_SHARED_OBJECT_MEMORY_PRESSURE",
         "ArkTS SharedObject memory pressure must be a non-negative safe integer.");
   }
+
   object->setAdditionalMemoryPressure(static_cast<size_t>(*pressure));
 }
 
@@ -252,6 +256,7 @@ std::vector<size_t> writableArgumentIndices(
   if (!descriptor.count("writableArguments")) {
     return indices;
   }
+
   for (const auto &value : requireArray(descriptor, "writableArguments", path)) {
     const auto index = readTransportInteger(value);
     if (!index || *index >= arity || (!indices.empty() && *index <= indices.back())) {
@@ -262,6 +267,7 @@ std::vector<size_t> writableArgumentIndices(
   if (async && !indices.empty()) {
     throw CodedError("ERR_ARKTS_MODULE_DESCRIPTOR", path + " cannot declare asynchronous writable arguments.");
   }
+
   return indices;
 }
 
@@ -309,6 +315,7 @@ jsi::Value makeTypedMarker(
   metadata.setProperty(runtime, "classLineage", std::move(classLineage));
   jsi::Object result(runtime);
   result.setProperty(runtime, kMarker, std::move(metadata));
+
   return result;
 }
 
@@ -326,6 +333,7 @@ jsi::Value encodeTypedJSIValue(
   if (!value.isObject()) {
     return jsi::Value(runtime, value);
   }
+
   auto object = value.getObject(runtime);
   if (object.hasNativeState<expo::SharedObject::NativeState>(runtime)) {
     auto nativeState = object.getNativeState<expo::SharedObject::NativeState>(runtime);
@@ -334,6 +342,7 @@ jsi::Value encodeTypedJSIValue(
           "ERR_SHARED_OBJECT_RELEASED",
           "Cannot pass a released SharedObject to an ArkTS Expo module.");
     }
+
     auto native = context->getNativeSharedObject(nativeState->objectId);
     auto identity = context->nativeSharedObjectIdentity(native);
     if (identity.runtimeEpoch != context->runtimeEpochString()) {
@@ -341,6 +350,7 @@ jsi::Value encodeTypedJSIValue(
           "ERR_SHARED_OBJECT_TYPE",
           "A SharedObject cannot cross RuntimeContext epochs.");
     }
+
     sharedObjects.push_back(native);
     return makeTypedMarker(runtime, identity);
   }
@@ -364,6 +374,7 @@ jsi::Value encodeTypedJSIValue(
     }
     return result;
   }
+
   jsi::Object result(runtime);
   auto names = object.getPropertyNames(runtime);
   for (size_t index = 0; index < names.size(runtime); ++index) {
@@ -377,9 +388,11 @@ jsi::Value encodeTypedJSIValue(
           "ERR_ARKTS_MODULE_VALUE",
           "Plain objects cannot use the reserved Expo SharedObject marker key.");
     }
+
     auto property = object.getProperty(runtime, name);
-    result.setProperty(
+    expo::common::defineRecordProperty(
         runtime,
+        result,
         name,
         encodeTypedJSIValue(
             context,
@@ -388,6 +401,7 @@ jsi::Value encodeTypedJSIValue(
             sharedObjects,
             depth + 1));
   }
+
   return result;
 }
 
@@ -407,6 +421,7 @@ TypedEncodedArguments encodeTypedArguments(
         encoded.sharedObjects,
         0));
   }
+
   return encoded;
 }
 
@@ -452,6 +467,7 @@ std::vector<jsi::Value> makeTypedArguments(
        runtime,
        std::forward<PrefixArguments>(prefixArguments)),
    ...);
+
   return arguments;
 }
 
@@ -488,6 +504,7 @@ public:
           "ERR_ARKTS_MODULE_VALUE",
           "The ArkTS Promise result has already been consumed.");
     }
+
     auto result = std::move(*value_);
     value_.reset();
     allowRelease();
@@ -546,6 +563,7 @@ void collectAuthorIds(
     }
     return;
   }
+
   for (const auto &item : value.items()) {
     collectAuthorIds(item.second, result, depth + 1);
   }
@@ -558,6 +576,7 @@ void discardAuthorIds(
     if (ids.empty() || !context || !context->isAlive()) {
       return;
     }
+
     auto values = folly::dynamic::array();
     for (auto id : ids) {
       values.push_back(static_cast<int64_t>(id));
@@ -611,6 +630,7 @@ jsi::Value decodeArkTSValue(
         "ERR_ARKTS_MODULE_VALUE",
         "An ArkTS Expo module result exceeds the maximum nesting depth.");
   }
+
   auto &runtime = context->runtime();
   if (value.isNull()) {
     return jsi::Value::null();
@@ -652,6 +672,7 @@ jsi::Value decodeArkTSValue(
       throw CodedError(
           "ERR_ARKTS_MODULE_VALUE", "ArkTS returned an invalid SharedObject marker.");
     }
+
     auto runtimeEpoch = requireString(marker, "runtimeEpoch", "SharedObject marker");
     const auto &moduleNameValue = requireField(marker, "moduleName", "SharedObject marker");
     if (!moduleNameValue.isString()) {
@@ -659,6 +680,7 @@ jsi::Value decodeArkTSValue(
           "ERR_SHARED_OBJECT_TYPE",
           "SharedObject marker.moduleName must be a string.");
     }
+
     auto moduleName = moduleNameValue.asString();
     auto className = requireString(marker, "className", "SharedObject marker");
     auto nativeRefType = requireString(marker, "nativeRefType", "SharedObject marker");
@@ -682,6 +704,7 @@ jsi::Value decodeArkTSValue(
             "ERR_SHARED_OBJECT_TYPE",
             "ArkTS returned a bound SharedObject with an author identity.");
       }
+
       auto native = context->getNativeSharedObject(
           static_cast<long>(*objectIdValue), moduleName, className);
       const auto identity = context->nativeSharedObjectIdentity(native);
@@ -689,10 +712,12 @@ jsi::Value decodeArkTSValue(
         throw CodedError(
             "ERR_SHARED_OBJECT_TYPE", "ArkTS returned mismatched SharedObject metadata.");
       }
+
       auto cached = context->getSharedObject(static_cast<long>(*objectIdValue));
       if (!cached.isUndefined()) {
         return cached;
       }
+
       return context->materializeNativeSharedObject(
           identity.moduleName, identity.className, std::move(native));
     }
@@ -706,11 +731,13 @@ jsi::Value decodeArkTSValue(
       if (!cached.isUndefined()) {
         return cached;
       }
+
       return context->materializeNativeSharedObject(
           iterator->second->moduleName(),
           iterator->second->className(),
           iterator->second);
     }
+
     auto object = std::make_shared<ArkTSSharedObject>(
         context, runtimeEpoch, moduleName, className, nativeRefType);
     auto objectId = context->registerNativeSharedObject(object);
@@ -764,6 +791,7 @@ jsi::Value decodeArkTSValue(
           "Unknown native exception while decoding an ArkTS SharedObject.");
     }
   }
+
   jsi::Object result(runtime);
   for (const auto &item : value.items()) {
     if (!item.first.isString()) {
@@ -771,9 +799,11 @@ jsi::Value decodeArkTSValue(
           "ERR_ARKTS_MODULE_VALUE",
           "ArkTS returned an object with a non-string key.");
     }
-    result.setProperty(
+
+    expo::common::defineRecordProperty(
         runtime,
-        item.first.asString().c_str(),
+        result,
+        jsi::String::createFromUtf8(runtime, item.first.asString()),
         decodeArkTSValue(
             context,
             item.second,
@@ -781,6 +811,7 @@ jsi::Value decodeArkTSValue(
             createdObjectIds,
             depth + 1));
   }
+
   return result;
 }
 
@@ -792,6 +823,7 @@ void collectTypedAuthorIds(
   if (depth > kMaxValueDepth || !value.isObject()) {
     return;
   }
+
   auto object = value.getObject(runtime);
   if (object.isFunction(runtime) || object.isArrayBuffer(runtime) || isArrayBufferView(runtime, object)) {
     return;
@@ -808,6 +840,7 @@ void collectTypedAuthorIds(
     }
     return;
   }
+
   auto names = object.getPropertyNames(runtime);
   for (size_t index = 0; index < names.size(runtime); ++index) {
     auto name = names.getValueAtIndex(runtime, index);
@@ -845,10 +878,12 @@ jsi::Value decodeTypedArkTSValue(
         "ERR_ARKTS_MODULE_VALUE",
         "An ArkTS Expo module typed value exceeds the maximum nesting depth.");
   }
+
   auto &runtime = context->runtime();
   if (!value.isObject()) {
     return jsi::Value(runtime, value);
   }
+
   auto object = value.getObject(runtime);
   if (object.isFunction(runtime) || object.isArrayBuffer(runtime) || isArrayBufferView(runtime, object)) {
     return jsi::Value(runtime, value);
@@ -875,6 +910,7 @@ jsi::Value decodeTypedArkTSValue(
     }
     return result;
   }
+
   jsi::Object result(runtime);
   auto names = object.getPropertyNames(runtime);
   for (size_t index = 0; index < names.size(runtime); ++index) {
@@ -884,12 +920,14 @@ jsi::Value decodeTypedArkTSValue(
     }
     auto name = nameValue.getString(runtime);
     auto property = object.getProperty(runtime, name);
-    result.setProperty(
+    expo::common::defineRecordProperty(
         runtime,
+        result,
         name,
         decodeTypedArkTSValue(
             context, property, staged, createdObjectIds, depth + 1));
   }
+
   return result;
 }
 
@@ -936,6 +974,7 @@ std::vector<jsi::Value> decodeTypedValueArray(
         "ERR_ARKTS_MODULE_VALUE",
         "ArkTS Expo module typed event arguments must be an array.");
   }
+
   auto array = values.getObject(runtime).getArray(runtime);
   std::unordered_map<uint64_t, std::shared_ptr<ArkTSSharedObject>> staged;
   std::unordered_set<long> createdObjectIds;
@@ -1012,16 +1051,19 @@ DecodedRejection decodeRejectionValue(
   if (depth >= kMaxValueDepth) {
     return result;
   }
+
   auto causeValue = error.getProperty(runtime, "cause");
   if (!causeValue.isString() && !causeValue.isObject()) {
     return result;
   }
+
   auto decodedCause = decodeRejectionValue(runtime, causeValue, depth + 1);
   result.cause = std::make_shared<CodedError>(
       std::move(decodedCause.code),
       std::move(decodedCause.message),
       std::move(decodedCause.path),
       std::move(decodedCause.cause));
+
   return result;
 }
 
@@ -1036,6 +1078,7 @@ DecodedRejection decodeRejection(
         std::nullopt,
         nullptr};
   }
+
   try {
     return decodeRejectionValue(runtime, arguments[0], 0);
   } catch (...) {
@@ -1056,11 +1099,13 @@ void adoptArkTSPromise(
   if (!platformResult.isObject()) {
     throw CodedError("ERR_ARKTS_MODULE", path + " did not return a Promise.");
   }
+
   auto platformPromise = platformResult.getObject(runtime);
   auto thenValue = platformPromise.getProperty(runtime, "then");
   if (!thenValue.isObject() || !thenValue.getObject(runtime).isFunction(runtime)) {
     throw CodedError("ERR_ARKTS_MODULE", path + " did not return a Promise.");
   }
+
   auto onFulfilled = jsi::Function::createFromHostFunction(
       runtime,
       jsi::PropNameID::forAscii(runtime, "resolveArkTSExpoModulePromise"),
@@ -1164,6 +1209,7 @@ std::vector<std::string> requireEvents(
     }
     result.push_back(event.asString());
   }
+
   return result;
 }
 
@@ -1207,12 +1253,14 @@ std::vector<std::shared_ptr<ExpoModule>> ArkTSModuleAdapter::createModules(
         "ERR_ARKTS_MODULE_DESCRIPTOR",
         "ExpoModulesCore.getExpoModuleDescriptors() must return an array.");
   }
+
   std::vector<std::shared_ptr<ExpoModule>> result;
   result.reserve(descriptors.size());
   for (auto &descriptor : descriptors) {
     result.push_back(
         std::make_shared<ArkTSModuleAdapter>(std::move(descriptor)));
   }
+
   return result;
 }
 
@@ -1254,6 +1302,7 @@ std::vector<jsi::Value> ArkTSModuleAdapter::decodeValues(
         "ERR_ARKTS_MODULE_VALUE",
         "ArkTS Expo module arguments must be an array.");
   }
+
   std::unordered_map<uint64_t, std::shared_ptr<ArkTSSharedObject>> staged;
   std::unordered_set<long> createdObjectIds;
   std::vector<jsi::Value> result;
@@ -1304,6 +1353,7 @@ ModuleDefinition ArkTSModuleAdapter::definition() {
         "ERR_ARKTS_MODULE_DESCRIPTOR",
         "ArkTS Expo module '" + moduleName + "' uses a reserved module name.");
   }
+
   ModuleDefinitionBuilder builder(moduleName);
   const auto modulePath = "ArkTS Expo module '" + moduleName + "'";
 
@@ -1315,6 +1365,7 @@ ModuleDefinition ArkTSModuleAdapter::definition() {
           "ERR_ARKTS_MODULE_DESCRIPTOR",
           modulePath + " defines constant '" + name + "' more than once.");
     }
+
     builder.constant(
         name,
         [moduleName, name](Invocation &invocation) {
@@ -1342,6 +1393,7 @@ ModuleDefinition ArkTSModuleAdapter::definition() {
           "ERR_ARKTS_MODULE_DESCRIPTOR",
           path + ".requiredArity cannot exceed .arity.");
     }
+
     const auto async = requireBoolean(function, "async", path);
     const auto writableIndices = writableArgumentIndices(function, arity, async, path);
     if (!functionNames.insert(name).second) {
@@ -1409,6 +1461,7 @@ ModuleDefinition ArkTSModuleAdapter::definition() {
             if (writableIndices.empty()) {
               return decodeTypedResult(context, std::move(result));
             }
+
             return decodeTypedValueGraph(context, result, [&]() {
               writeBack->commit(*context);
             });
@@ -1425,6 +1478,7 @@ ModuleDefinition ArkTSModuleAdapter::definition() {
           "ERR_ARKTS_MODULE_DESCRIPTOR",
           modulePath + " defines property '" + name + "' more than once.");
     }
+
     const auto writable = requireBoolean(
         property, "writable", modulePath + " property '" + name + "'");
     PropertyDefinition definition{
@@ -1487,6 +1541,7 @@ ModuleDefinition ArkTSModuleAdapter::definition() {
           "ERR_ARKTS_MODULE_DESCRIPTOR",
           modulePath + " defines class '" + className + "' more than once.");
     }
+
     ClassDefinition klass;
     klass.name = className;
     klass.baseClassName = requireString(
@@ -1504,6 +1559,7 @@ ModuleDefinition ArkTSModuleAdapter::definition() {
           "ERR_ARKTS_MODULE_DESCRIPTOR",
           classPath + ".constructorRequiredArity cannot exceed .constructorArity.");
     }
+
     klass.constructor = [moduleName,
                          className,
                          nativeRefType,
@@ -1513,6 +1569,7 @@ ModuleDefinition ArkTSModuleAdapter::definition() {
             "ERR_SHARED_OBJECT_CONSTRUCTOR",
             "Expo SharedObject class '" + moduleName + "." + className + "' is not constructible from JavaScript.");
       }
+
       auto context = invocation.sharedContext();
       auto object = std::make_shared<ArkTSSharedObject>(
           context,
@@ -1563,6 +1620,7 @@ ModuleDefinition ArkTSModuleAdapter::definition() {
             "ERR_ARKTS_MODULE_DESCRIPTOR",
             classPath + " defines constant '" + name + "' more than once.");
       }
+
       klass.constants.emplace_back(
           name,
           [moduleName, className, name](Invocation &invocation) {
@@ -1592,11 +1650,13 @@ ModuleDefinition ArkTSModuleAdapter::definition() {
             "ERR_ARKTS_MODULE_DESCRIPTOR",
             memberPath + ".requiredArity cannot exceed .arity.");
       }
+
       const auto async = requireBoolean(function, "async", memberPath);
       if (!memberNames.insert(name).second) {
         throw CodedError(
             "ERR_ARKTS_MODULE_DESCRIPTOR", memberPath + " is duplicated.");
       }
+
       SharedObjectFunctionDefinition definition{
           .name = name,
           .arity = arity,
@@ -1667,11 +1727,13 @@ ModuleDefinition ArkTSModuleAdapter::definition() {
             "ERR_ARKTS_MODULE_DESCRIPTOR",
             memberPath + ".requiredArity cannot exceed .arity.");
       }
+
       const auto async = requireBoolean(function, "async", memberPath);
       if (!staticNames.insert(name).second) {
         throw CodedError(
             "ERR_ARKTS_MODULE_DESCRIPTOR", memberPath + " is duplicated.");
       }
+
       FunctionDefinition definition{
           .name = name,
           .arity = arity,
@@ -1730,6 +1792,7 @@ ModuleDefinition ArkTSModuleAdapter::definition() {
             "ERR_ARKTS_MODULE_DESCRIPTOR",
             classPath + " property '" + name + "' is duplicated.");
       }
+
       const auto writable = requireBoolean(
           property, "writable", classPath + " property '" + name + "'");
       SharedObjectPropertyDefinition definition{
@@ -1794,6 +1857,7 @@ ModuleDefinition ArkTSModuleAdapter::definition() {
           "ERR_ARKTS_MODULE_DESCRIPTOR",
           viewPath + " is duplicated.");
     }
+
     auto componentName = requireString(
         viewDescriptor, "componentName", viewPath);
     auto prototypeName = requireString(
@@ -1832,6 +1896,7 @@ ModuleDefinition ArkTSModuleAdapter::definition() {
             "ERR_ARKTS_MODULE_DESCRIPTOR",
             viewPath + " prop '" + propName + "' is duplicated.");
       }
+
       // Only prop names cross the native descriptor boundary.
       view.props.push_back(ViewPropDefinition{.name = std::move(propName)});
     }
@@ -1850,6 +1915,7 @@ ModuleDefinition ArkTSModuleAdapter::definition() {
             "ERR_ARKTS_MODULE_DESCRIPTOR",
             functionPath + ".requiredArity cannot exceed .arity.");
       }
+
       const auto async = requireBoolean(function, "async", functionPath);
       if (!async) {
         throw CodedError(
@@ -1861,6 +1927,7 @@ ModuleDefinition ArkTSModuleAdapter::definition() {
             "ERR_ARKTS_MODULE_DESCRIPTOR",
             functionPath + " is duplicated.");
       }
+
       view.functions.push_back(FunctionDefinition{
           .name = name,
           .arity = arity,
@@ -1896,6 +1963,7 @@ ModuleDefinition ArkTSModuleAdapter::definition() {
     }
     builder.view(std::move(view));
   }
+
   return std::move(builder).build();
 }
 

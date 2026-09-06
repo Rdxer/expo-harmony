@@ -145,6 +145,7 @@ export class ExpoHarmonyHostState {
     const state = new ExpoHarmonyAbilityState(`expo-ability-${this.nextAbilityIdentity++}`, this.lifecycle.openScope(context));
 
     this.abilities.set(context, state);
+
     return state;
   }
 

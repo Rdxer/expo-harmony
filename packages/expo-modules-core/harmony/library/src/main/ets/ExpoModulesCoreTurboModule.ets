@@ -14,6 +14,7 @@ import {
   EXPO_LIFECYCLE_JAVASCRIPT_BUNDLE_LOADED,
 } from './protocol/Protocol';
 import { ensureDirectoryUri } from './appcontext/FileUri';
+import { ExpoHostReload } from './appcontext/ExpoHostReload';
 import { installRnohDestroyBarrier } from './appcontext/RnohDestroyAdapter';
 
 const DESTROY_ACK_WARNING_MS: number = 5000;
@@ -63,14 +64,21 @@ export class ExpoModulesCoreTurboModule extends EtsUITurboModule {
     this.coreContext = coreContext;
     this.modules = modules;
 
-    this.modules.configureReloadHost(async (reason: string): Promise<void> => {
-      if (this.destroyStarted) {
-        throw new Error('The Expo modules Host is already being destroyed.');
-      }
+    this.modules.configureReloadHost(
+      async (reason: string): Promise<void> => {
+        if (this.destroyStarted) {
+          throw new Error('The Expo modules Host is already being destroyed.');
+        }
 
-      // Use the DevTools reload entrypoint so RNApp adopts the new instance.
-      this.coreContext.devToolsController.reload(reason);
-    });
+        await ExpoHostReload.require(this.coreContext.rnInstance.getId())(reason);
+      },
+      (): void => {
+        if (this.destroyStarted) {
+          throw new Error('The Expo modules Host is already being destroyed.');
+        }
+        ExpoHostReload.require(this.coreContext.rnInstance.getId());
+      },
+    );
 
     this.unsubscribeLifecycle.push(hostState.bindHost(hostBinding, this));
     this.unsubscribeLifecycle.push(

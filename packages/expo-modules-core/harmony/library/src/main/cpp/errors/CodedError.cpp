@@ -89,6 +89,7 @@ jsi::Object makeCodedErrorObject(
         "cause",
         makeCodedErrorObject(runtime, *error.cause(), depth + 1));
   }
+
   return result;
 }
 

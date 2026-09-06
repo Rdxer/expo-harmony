@@ -17,6 +17,7 @@ bool SharedObjectReleaseState::release() noexcept {
   if (released_.exchange(true, std::memory_order_acq_rel)) {
     return false;
   }
+
   try {
     if (releaser_) {
       releaser_(objectId_);
@@ -24,6 +25,7 @@ bool SharedObjectReleaseState::release() noexcept {
   } catch (...) {
     // A native exception must never escape a GC finalizer.
   }
+
   return true;
 }
 

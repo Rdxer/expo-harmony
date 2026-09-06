@@ -22,6 +22,7 @@
 #include "common/SharedObjectClassIdentity.h"
 #include "common/SharedObjectInvocationState.h"
 #include "common/SharedObjectObservationState.h"
+#include "common/SharedObjectWrapperState.h"
 #include "runtime/RuntimeIdentity.h"
 #include "runtime/RuntimeInvocationState.h"
 #include "runtime/SerialExecutor.h"
@@ -181,7 +182,7 @@ public:
       long objectId,
       const facebook::jsi::Object &object);
   void releaseSharedObject(long objectId);
-  void scheduleSharedObjectRelease(long objectId) noexcept;
+  void scheduleSharedObjectRelease(long objectId, SharedObjectWrapperState::Token wrapper = {}) noexcept;
   facebook::jsi::Value getSharedObject(long objectId);
   size_t beginObservingSharedObject(
       long objectId,
@@ -232,7 +233,7 @@ private:
   void finalizeSharedObjectRelease(long objectId);
   void releaseSharedObjectInvocations(
       std::vector<SharedObjectInvocationLeaseBundle::Entry> entries) noexcept;
-  void scheduleSharedObjectReleaseFinalization(long objectId) noexcept;
+  void scheduleSharedObjectReleaseFinalization(long objectId, SharedObjectWrapperState::Token wrapper = {}) noexcept;
   bool beginDispatchedInvocation() noexcept;
   void releaseDispatchedInvocation() noexcept;
   void drainModuleListeners() noexcept;
@@ -257,6 +258,7 @@ private:
   std::unordered_map<long, std::shared_ptr<NativeSharedObject>> nativeSharedObjects_;
   std::unordered_map<const NativeSharedObject *, long> nativeSharedObjectIds_;
   std::unordered_map<long, std::pair<std::string, std::string>> nativeSharedObjectClasses_;
+  SharedObjectWrapperState sharedObjectWrappers_;
   SharedObjectInvocationState sharedObjectInvocations_;
   SharedObjectObservationState sharedObjectObservations_;
   RuntimeInvocationState runtimeInvocations_;

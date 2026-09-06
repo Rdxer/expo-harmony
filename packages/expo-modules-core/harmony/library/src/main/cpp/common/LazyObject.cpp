@@ -24,6 +24,7 @@ jsi::Value LazyObject::get(jsi::Runtime &runtime, const jsi::PropNameID &name) {
     }
     initializeBackedObject(runtime);
   }
+
   return backedObject ? backedObject->getProperty(runtime, name) : jsi::Value::undefined();
 }
 
@@ -44,6 +45,7 @@ std::vector<jsi::PropNameID> LazyObject::getPropertyNames(jsi::Runtime &runtime)
     jsi::Array propertyNames = backedObject->getPropertyNames(runtime);
     return common::jsiArrayToPropNameIdsVector(runtime, propertyNames);
   }
+
   return {};
 }
 
@@ -56,6 +58,7 @@ const jsi::Object &LazyObject::unwrapObjectIfNecessary(jsi::Runtime &runtime, co
     }
     return *lazyObject->backedObject;
   }
+
   return object;
 }
 

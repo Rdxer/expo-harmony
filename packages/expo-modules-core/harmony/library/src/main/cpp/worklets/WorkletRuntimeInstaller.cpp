@@ -43,6 +43,7 @@ public:
     if (!runtime) {
       return;
     }
+
     auto body = [runtime, function = std::move(function)]() mutable {
       runtime->runSync(
           [function = std::move(function)](jsi::Runtime &rt) mutable {
@@ -54,6 +55,7 @@ public:
           rnoh::TaskThread::MAIN, std::move(body));
       return;
     }
+
     body();
   }
 
@@ -121,6 +123,7 @@ void WorkletRuntimeInstaller::install(
                 coreModule->registerRuntimeContext(runtime, existing);
                 return;
               }
+
               auto uiContext = RuntimeContext::create(
                   runtime,
                   std::make_shared<WorkletCallInvoker>(

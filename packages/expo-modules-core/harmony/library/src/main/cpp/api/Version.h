@@ -26,6 +26,7 @@ constexpr int versionPart(std::string_view version, std::size_t expectedPart) {
       }
     }
   }
+
   return part == expectedPart ? value : 0;
 }
 }  // namespace detail

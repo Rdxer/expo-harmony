@@ -75,6 +75,7 @@ std::vector<jsi::PropNameID> jsiArrayToPropNameIdsVector(jsi::Runtime &runtime, 
     jsi::String name = array.getValueAtIndex(runtime, i).getString(runtime);
     vector.push_back(jsi::PropNameID::forString(runtime, name));
   }
+
   return vector;
 }
 

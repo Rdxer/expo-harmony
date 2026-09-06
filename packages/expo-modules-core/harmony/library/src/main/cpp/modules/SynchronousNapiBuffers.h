@@ -70,6 +70,7 @@ public:
     if (status != napi_ok) {
       throw std::runtime_error("Could not create a synchronous ArkTS binary buffer.");
     }
+
     buffers_.emplace(snapshot.get(), Entry{buffer, snapshot->writable});
     return buffer;
   }
@@ -89,6 +90,7 @@ public:
       if (detached) {
         return napi_generic_failure;
       }
+
       void *data = nullptr;
       size_t length = 0;
       status = napi_get_arraybuffer_info(env_, entry.value, &data, &length);

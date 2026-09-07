@@ -4,6 +4,12 @@
 
 为 HarmonyOS 上的 React Native 应用提供 Expo NavigationBar 的原生实现和 JavaScript 适配，与官方同版本的 `expo-navigation-bar` 配套使用。支持读取和设置导航栏背景色、按钮样式、显示状态和布局位置，订阅显示状态变化，以及通过配置插件设置启动时的导航栏外观。
 
+## 安装
+
+```bash
+npm install @expo-harmony/expo-navigation-bar expo-modules-core@55.0.25 expo-navigation-bar@55.0.13
+```
+
 如果需要声明启动时应用的导航栏初始设置，请在 `app.json` 的 `plugins` 中传入 `@expo-harmony/expo-navigation-bar`：
 
 ```json

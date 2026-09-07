@@ -4,6 +4,12 @@
 
 为 HarmonyOS 上的 React Native 应用提供 Expo Modules 和 RNOH 原生模块自动链接能力，与官方同版本的 expo-modules-autolinking 配套使用。
 
+## 安装
+
+```bash
+npm install @expo-harmony/expo-modules-autolinking @react-native-oh/react-native-harmony-cli@^0.84.1
+```
+
 ## Author
 
 **expo-harmony** © [Baoshuo](https://github.com/renbaoshuo), Released under the MIT License.<br>

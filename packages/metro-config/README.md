@@ -4,6 +4,12 @@
 
 用于将 Expo Metro 配置与 React Native OpenHarmony（RNOH）组合起来，使 Expo 项目能够同时支持 HarmonyOS。
 
+## 安装
+
+```bash
+npm install @expo-harmony/metro-config @expo/metro-runtime@^55.0.0 @react-native-oh/react-native-harmony@0.84.1 metro-config@^0.83.0
+```
+
 这个包会隔离 Expo 与 RNOH 的 resolver 调用链：
 
 - Android、iOS 和 Web 请求继续使用 Expo 原有的 resolver。

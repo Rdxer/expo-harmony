@@ -4,6 +4,12 @@
 
 为 HarmonyOS 上的 React Native 应用提供 Expo Constants 的原生实现，用于读取应用配置、设备与系统信息以及 HarmonyOS 平台元数据，与官方同版本的 `expo-constants` 配套使用。
 
+## 安装
+
+```bash
+npm install @expo-harmony/expo-constants expo-constants@55.0.17
+```
+
 安装本包后必须在 `app.json` 的 `plugins` 中传入 `@expo-harmony/expo-constants`，并启用 `@expo-harmony/prebuild-config`：
 
 ```json

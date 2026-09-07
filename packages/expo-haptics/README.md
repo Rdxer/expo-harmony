@@ -4,6 +4,12 @@
 
 为 HarmonyOS 上的 React Native 应用提供 Expo Haptics 的原生实现，与官方同版本的 `expo-haptics` 配套使用。
 
+## 安装
+
+```bash
+npm install @expo-harmony/expo-haptics expo-haptics@55.0.14
+```
+
 该原生库会声明 `ohos.permission.VIBRATE` 权限。
 
 振动效果会根据 HarmonyOS 版本和设备能力选择系统预设、振动模式或定时振动，不同设备的实际触感可能存在差异。

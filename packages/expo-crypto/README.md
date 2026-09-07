@@ -5,6 +5,12 @@
 为 HarmonyOS 上的 React Native 应用提供 Expo Crypto 的原生实现。
 ## Author
 
+## 安装
+
+```bash
+npm install @expo-harmony/expo-crypto expo-crypto@55.0.15
+```
+
 **expo-harmony** © [Baoshuo](https://github.com/renbaoshuo), Released under the MIT License.<br>
 Authored and maintained by Baoshuo with help from [contributors](https://github.com/renbaoshuo/expo-harmony/contributors).
 

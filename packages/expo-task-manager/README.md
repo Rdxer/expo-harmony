@@ -4,6 +4,12 @@
 
 为 HarmonyOS 上的 React Native 应用提供 Expo Task Manager 的原生实现，与官方同版本的 `expo-task-manager` 配套使用。
 
+## 安装
+
+```bash
+npm install @expo-harmony/expo-task-manager expo-task-manager@~55.0.16
+```
+
 ## Author
 
 **expo-harmony** © [Baoshuo](https://github.com/renbaoshuo), Released under the MIT License.<br>

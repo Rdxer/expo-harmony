@@ -19,7 +19,7 @@ export default function HomeScreen() {
         <View style={styles.badge}>
           <Text style={styles.badgeText}>HARMONYOS · SDK 55</Text>
         </View>
-        <Text style={styles.title}>模块实验室</Text>
+        <Text style={styles.title}>模块实验室1</Text>
         <Text style={styles.subtitle}>
           选择一个模块包，运行其中的验证卡片，逐项查看每项原生能力的实际结果。
         </Text>

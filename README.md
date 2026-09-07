@@ -4,6 +4,8 @@
 
 [查阅快速开始文档 >>](./docs/QUICK_START.md)
 
+[AtomGit 上的镜像仓库](https://atomgit.com/baoshuo/expo-harmony)
+
 ## Supported Libraries
 
 已经移植的库都发布在 `@expo-harmony/` 下，具体列表如下：

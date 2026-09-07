@@ -112,7 +112,10 @@ function classifySource(revision, packageRoot, options) {
     && isPathInside(options.nativeModulesDir, packageRoot)) {
     return 'nativeModulesDir';
   }
-  if (options.searchPaths.some(searchPath => isPathInside(searchPath, packageRoot))) {
+  // A package symlink can resolve outside searchPaths (e.g. prebuild --check).
+  // The upstream scanner retains its entry path in originPath.
+  if (options.searchPaths.some(searchPath =>
+    isPathInside(searchPath, packageRoot) || isPathInside(searchPath, revision.originPath))) {
     return 'searchPath';
   }
   return 'dependency';

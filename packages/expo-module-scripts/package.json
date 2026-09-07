@@ -1,6 +1,6 @@
 {
   "name": "@expo-harmony/expo-module-scripts",
-  "version": "55.0.0-harmony.1",
+  "version": "55.0.0-harmony.2",
   "description": "HarmonyOS port of expo-module-scripts",
   "keywords": [
     "react-native",
@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@expo-harmony/expo-modules-autolinking": "workspace:*",
+    "cross-spawn": "^7.0.6",
     "fast-glob": "^3.3.2",
     "json5": "2.2.3",
     "semver": "7.7.3",

@@ -12,10 +12,7 @@
 ## 安装依赖
 
 ```sh
-npm install @expo-harmony/cli @expo-harmony/metro-config \
-  @react-native-oh/react-native-harmony@0.84.1 \
-  @react-native-oh/react-native-harmony-cli@0.84.1 \
-  react-harmony@npm:react@19.2.3
+npm install @expo-harmony/cli @expo-harmony/metro-config @react-native-oh/react-native-harmony@0.84.1 @react-native-oh/react-native-harmony-cli@0.84.1 react-harmony@npm:react@19.2.3
 ```
 
 几点说明：

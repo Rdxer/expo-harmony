@@ -1,6 +1,6 @@
 {
   "name": "@expo-harmony/expo-modules-autolinking",
-  "version": "55.0.25-harmony.2",
+  "version": "55.0.25-harmony.3",
   "description": "HarmonyOS port of expo-modules-autolinking",
   "keywords": [
     "react-native",
@@ -20,7 +20,7 @@
   "main": "build/index.js",
   "types": "build/index.d.ts",
   "scripts": {
-    "build": "rm -rf build && tsc -p tsconfig.json && chmod +x build/bin/expo-harmony-autolinking.js",
+    "build": "node ./scripts/build.mjs",
     "prepare": "yarn build",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
@@ -29,6 +29,10 @@
       "types": "./build/index.d.ts",
       "require": "./build/index.js",
       "default": "./build/index.js"
+    },
+    "./tool-command": {
+      "types": "./build/src/utilities/toolCommand.d.ts",
+      "default": "./build/src/utilities/toolCommand.js"
     },
     "./harmony-module.schema.json": {
       "default": "./harmony-module.schema.json"
@@ -40,6 +44,7 @@
   "dependencies": {
     "case": "1.6.3",
     "commander": "7.2.0",
+    "cross-spawn": "^7.0.6",
     "expo-modules-autolinking": "55.0.25",
     "json5": "2.2.3"
   },

@@ -1,4 +1,5 @@
 import spawn from 'cross-spawn';
+import { terminateProcess } from '@expo-harmony/expo-modules-autolinking/tool-command';
 
 import { HarmonyCliError } from './errors';
 
@@ -76,8 +77,15 @@ function formatDiagnostics(result: Pick<ProcessResult, 'stderr' | 'stdout'>, lim
 
 function spawnAsync(command: string, args: string[], options: ProcessOptions = {}): Promise<ProcessResult> {
   return new Promise<ProcessResult>((resolve, reject) => {
+    if (options.signal?.aborted) {
+      throw new HarmonyCliError('ERR_HARMONY_PROCESS_FAILED', `Cannot run ${command}: operation aborted.`, {
+        cause: options.signal.reason,
+        operation: options.operation || 'spawn',
+      });
+    }
+
     const piped = Boolean(options.capture || options.onStdout || options.onStderr);
-    const outputLimit = options.outputLimit || DefaultOutputLimit;
+    const limit = options.outputLimit || DefaultOutputLimit;
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env || process.env,
@@ -86,11 +94,12 @@ function spawnAsync(command: string, args: string[], options: ProcessOptions = {
       windowsHide: true,
     });
 
-    const stdout = new BoundedCapture(outputLimit);
-    const stderr = new BoundedCapture(outputLimit);
+    const stdout = new BoundedCapture(limit);
+    const stderr = new BoundedCapture(limit);
     let timedOut = false;
     let settled = false;
-    let forceKillTimer: NodeJS.Timeout | null = null;
+    let escalation: NodeJS.Timeout | null = null;
+    let stopping: Promise<void> | undefined;
 
     if (piped) {
       child.stdout.on('data', (chunk) => {
@@ -103,72 +112,96 @@ function spawnAsync(command: string, args: string[], options: ProcessOptions = {
       });
     }
 
-    const stopChild = (signal: NodeJS.Signals = 'SIGTERM') => {
-      child.kill(signal);
-      if (forceKillTimer === null) {
-        forceKillTimer = setTimeout(
-          () => child.kill('SIGKILL'),
+    const stop = (signal: NodeJS.Signals = 'SIGTERM') => {
+      if (stopping || settled) return;
+
+      stopping = Promise.resolve().then(() => terminateProcess(child, signal));
+      if (process.platform === 'win32') {
+        void finish(null, signal);
+      } else {
+        stopping.catch((cause) => {
+          void finish(null, null, cause);
+        });
+        escalation = setTimeout(
+          () => {
+            stopping = terminateProcess(child, 'SIGKILL');
+            stopping.catch((cause) => {
+              void finish(null, null, cause);
+            });
+          },
           options.stopGraceMs || DefaultStopGraceMs
         );
-        forceKillTimer.unref?.();
+        escalation.unref?.();
       }
     };
 
-    const forwardSigint = () => stopChild('SIGINT');
-    const forwardSigterm = () => stopChild('SIGTERM');
-    process.once('SIGINT', forwardSigint);
-    process.once('SIGTERM', forwardSigterm);
+    const interrupt = () => stop('SIGINT');
+    const terminate = () => stop('SIGTERM');
+    process.once('SIGINT', interrupt);
+    process.once('SIGTERM', terminate);
 
     const timeout = options.timeoutMs
       ? setTimeout(() => {
           timedOut = true;
-          stopChild('SIGTERM');
+          stop('SIGTERM');
         }, options.timeoutMs)
       : null;
     timeout?.unref?.();
 
     const cleanup = () => {
       if (timeout) clearTimeout(timeout);
-      if (forceKillTimer) clearTimeout(forceKillTimer);
-      process.removeListener('SIGINT', forwardSigint);
-      process.removeListener('SIGTERM', forwardSigterm);
+      if (escalation) clearTimeout(escalation);
+      process.removeListener('SIGINT', interrupt);
+      process.removeListener('SIGTERM', terminate);
       options.signal?.removeEventListener('abort', abort);
     };
 
-    const abort = () => stopChild('SIGTERM');
-    if (options.signal?.aborted) abort();
-    else options.signal?.addEventListener('abort', abort, { once: true });
+    const finish = async (code, signal, cause?) => {
+      try {
+        await stopping;
+      } catch (error) {
+        cause = error;
+      }
 
-    child.once('error', (cause) => {
       if (settled) return;
       settled = true;
       cleanup();
 
-      reject(new HarmonyCliError('ERR_HARMONY_PROCESS_FAILED', `Cannot launch ${command}: ${cause.message}`, {
+      if (cause) reject(new HarmonyCliError('ERR_HARMONY_PROCESS_FAILED', `Cannot run ${command}: ${cause.message}`, {
         cause,
         operation: options.operation || 'spawn',
       }));
-    });
-    // `close` runs after stdout/stderr have closed, so captured diagnostics are
-    // complete. `exit` can fire while pipe data is still pending.
-    child.once('close', (code, signal) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-
-      resolve({
+      else resolve({
         code: code === null ? 1 : code,
         signal,
         stderr: stderr.toString(),
         stdout: stdout.toString(),
         timedOut,
       });
+    };
+
+    child.once('error', (cause) => {
+      void finish(null, null, cause);
     });
+    child.once('close', (code, signal) => {
+      void finish(code, signal);
+    });
+
+    const abort = () => stop('SIGTERM');
+    options.signal?.addEventListener('abort', abort, { once: true });
+    if (options.signal?.aborted) abort();
   });
 }
 
 function startManagedProcess(command: string, args: string[], options: ProcessOptions = {}) {
-  const outputLimit = options.outputLimit || DefaultOutputLimit;
+  if (options.signal?.aborted) {
+    throw new HarmonyCliError('ERR_HARMONY_PROCESS_FAILED', `Cannot launch ${command}: operation aborted.`, {
+      cause: options.signal.reason,
+      operation: options.operation || 'spawn',
+    });
+  }
+
+  const limit = options.outputLimit || DefaultOutputLimit;
   const piped = options.stdio !== 'inherit';
   const child = spawn(command, args, {
     cwd: options.cwd,
@@ -178,11 +211,14 @@ function startManagedProcess(command: string, args: string[], options: ProcessOp
     windowsHide: true,
   });
 
-  const stdout = new BoundedCapture(outputLimit);
-  const stderr = new BoundedCapture(outputLimit);
-  let spawnError: HarmonyCliError | null = null;
+  const stdout = new BoundedCapture(limit);
+  const stderr = new BoundedCapture(limit);
+  let failure: HarmonyCliError | null = null;
   let closed = false;
-  let stopRequested = false;
+  let stopped = false;
+  let stopping: Promise<void> | undefined;
+  let stopPromise: Promise<ProcessResult | undefined> | undefined;
+  let finish: (code: number | null, signal: NodeJS.Signals | null) => Promise<void>;
 
   if (piped) {
     child.stdout.on('data', (chunk) => {
@@ -195,34 +231,43 @@ function startManagedProcess(command: string, args: string[], options: ProcessOp
     });
   }
 
-  const forwardSigint = () => {
-    void stop('SIGINT');
+  const interrupt = () => {
+    void stop('SIGINT').catch(() => {});
   };
-  const forwardSigterm = () => {
-    void stop('SIGTERM');
+  const terminate = () => {
+    void stop('SIGTERM').catch(() => {});
   };
   const abort = () => {
-    void stop('SIGTERM');
+    void stop('SIGTERM').catch(() => {});
   };
 
   const cleanup = () => {
-    process.removeListener('SIGINT', forwardSigint);
-    process.removeListener('SIGTERM', forwardSigterm);
+    process.removeListener('SIGINT', interrupt);
+    process.removeListener('SIGTERM', terminate);
     options.signal?.removeEventListener('abort', abort);
   };
 
   const completion = new Promise<ProcessResult>((resolve, reject) => {
     child.once('error', (cause) => {
-      spawnError = new HarmonyCliError('ERR_HARMONY_PROCESS_FAILED', `Cannot launch ${command}: ${cause.message}`, {
+      failure = new HarmonyCliError('ERR_HARMONY_PROCESS_FAILED', `Cannot launch ${command}: ${cause.message}`, {
         cause,
         operation: options.operation || 'spawn',
       });
     });
-    child.once('close', (code, signal) => {
+    finish = async (code, signal) => {
+      try {
+        await stopping;
+      } catch (cause) {
+        failure = new HarmonyCliError('ERR_HARMONY_PROCESS_FAILED', `Cannot stop ${command}: ${cause.message}`, {
+          cause, operation: options.operation || 'spawn',
+        });
+      }
+
+      if (closed) return;
       closed = true;
       cleanup();
 
-      if (spawnError) reject(spawnError);
+      if (failure) reject(failure);
       else resolve({
         code: code === null ? 1 : code,
         signal,
@@ -230,6 +275,10 @@ function startManagedProcess(command: string, args: string[], options: ProcessOp
         stdout: stdout.toString(),
         timedOut: false,
       });
+    };
+
+    child.once('close', (code, signal) => {
+      void finish(code, signal);
     });
   });
   // A readiness probe may be the first consumer. Keep early spawn failures from
@@ -237,28 +286,53 @@ function startManagedProcess(command: string, args: string[], options: ProcessOp
   completion.catch(() => {});
 
   async function stop(signal: NodeJS.Signals = 'SIGTERM', graceMs = DefaultStopGraceMs) {
+    if (stopPromise) return stopPromise;
     if (closed) return completion;
 
-    stopRequested = true;
-    child.kill(signal);
-    let timer: NodeJS.Timeout | undefined;
+    stopped = true;
+    stopping = Promise.resolve().then(() => terminateProcess(child, signal));
+    stopPromise = (async () => {
+      if (process.platform === 'win32') {
+        void finish(null, signal);
+        return completion;
+      }
 
-    await Promise.race([
-      completion.catch(() => undefined),
-      new Promise((resolve) => {
-        timer = setTimeout(resolve, graceMs);
-        timer.unref?.();
-      }),
-    ]);
+      try {
+        await stopping;
+      } catch {
+        await finish(null, signal);
+        return completion;
+      }
 
-    if (timer) clearTimeout(timer);
-    if (!closed) child.kill('SIGKILL');
+      let timer: NodeJS.Timeout | undefined;
 
-    return completion.catch(() => undefined);
+      await Promise.race([
+        completion.catch(() => undefined),
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, graceMs);
+          timer.unref?.();
+        }),
+      ]);
+
+      if (timer) clearTimeout(timer);
+      if (!closed) {
+        stopping = terminateProcess(child, 'SIGKILL');
+        try {
+          await stopping;
+        } catch {
+          await finish(null, signal);
+        }
+      }
+
+      return completion.catch(() => undefined);
+    })();
+    stopPromise.catch(() => {});
+
+    return stopPromise;
   }
 
-  process.once('SIGINT', forwardSigint);
-  process.once('SIGTERM', forwardSigterm);
+  process.once('SIGINT', interrupt);
+  process.once('SIGTERM', terminate);
   if (options.signal?.aborted) abort();
   else options.signal?.addEventListener('abort', abort, { once: true });
 
@@ -268,7 +342,7 @@ function startManagedProcess(command: string, args: string[], options: ProcessOp
     getStderr: () => stderr.toString(),
     getStdout: () => stdout.toString(),
     stop,
-    wasStopped: () => stopRequested,
+    wasStopped: () => stopped,
   };
 }
 

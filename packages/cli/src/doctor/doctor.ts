@@ -208,6 +208,8 @@ async function doctorUnlockedAsync(projectRoot: string, options: DoctorOptions =
     tools.unshift(['hdc', toolchain.hdc, ['-v'], unavailableToolStatus]);
   }
   for (const [id, tool, versionArgs, unavailableStatus] of tools) {
+    const command = [tool.command, ...tool.args].map(value => JSON.stringify(value)).join(' ');
+
     try {
       const result = await spawnAsync(tool.command, [...tool.args, ...versionArgs], {
         capture: true,
@@ -215,11 +217,12 @@ async function doctorUnlockedAsync(projectRoot: string, options: DoctorOptions =
         operation: `doctor-${id}`,
         timeoutMs: 10_000,
       });
+
       checks.push(result.code === 0 && !result.timedOut
-        ? check(id, 'pass', `${tool.command} is available through ${tool.source}.`)
-        : check(id, unavailableStatus, `${tool.command} is unavailable or unhealthy; HAP build cannot be verified.`));
+        ? check(id, 'pass', `${command} is available through ${tool.source}.`)
+        : check(id, unavailableStatus, `${command} is unavailable or unhealthy; HAP build cannot be verified.`));
     } catch {
-      checks.push(check(id, unavailableStatus, `${tool.command} is unavailable; generation remains available.`));
+      checks.push(check(id, unavailableStatus, `${command} is unavailable; generation remains available.`));
     }
   }
 

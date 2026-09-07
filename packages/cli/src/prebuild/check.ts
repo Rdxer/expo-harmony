@@ -40,7 +40,28 @@ function mirrorRoot(temp, project) {
   return path.join(temp, 'filesystem', volume, ...segments);
 }
 
-async function linkModulesAsync(source, target) {
+async function linkModuleEntryAsync(
+  source: string,
+  target: string,
+  entry: fs.Dirent
+) {
+  const directory = entry.isSymbolicLink()
+    ? (await fs.promises.stat(source)).isDirectory()
+    : entry.isDirectory();
+
+  if (process.platform === 'win32' && !directory) {
+    await fs.promises.copyFile(source, target);
+    return;
+  }
+
+  await fs.promises.symlink(
+    path.resolve(source),
+    target,
+    directory ? process.platform === 'win32' ? 'junction' : 'dir' : 'file'
+  );
+}
+
+async function linkModulesAsync(source: string, target: string) {
   await fs.promises.mkdir(target, { recursive: true });
 
   for (const entry of await fs.promises.readdir(source, { withFileTypes: true })) {
@@ -49,25 +70,18 @@ async function linkModulesAsync(source, target) {
 
     if (entry.name.startsWith('@') && entry.isDirectory() && !entry.isSymbolicLink()) {
       await fs.promises.mkdir(to);
+
       for (const child of await fs.promises.readdir(from, { withFileTypes: true })) {
-        await fs.promises.symlink(
+        await linkModuleEntryAsync(
           path.join(from, child.name),
           path.join(to, child.name),
-          process.platform === 'win32' && (child.isDirectory() || child.isSymbolicLink())
-            ? 'junction'
-            : child.isDirectory() ? 'dir' : 'file'
+          child
         );
       }
       continue;
     }
 
-    await fs.promises.symlink(
-      from,
-      to,
-      process.platform === 'win32' && (entry.isDirectory() || entry.isSymbolicLink())
-        ? 'junction'
-        : entry.isDirectory() ? 'dir' : 'file'
-    );
+    await linkModuleEntryAsync(from, to, entry);
   }
 }
 
@@ -126,8 +140,8 @@ async function copyAsync(
   // Keep a real node_modules directory in the isolated project and link its
   // entries. Dependency scanners then retain the isolated lexical package path
   // (including scoped packages) instead of collapsing the entire node_modules
-  // root to the source project's realpath. The packages remain read-only and
-  // are never copied or modified by --check.
+  // root to the source project's realpath. Package directories stay linked;
+  // Windows copies loose files to avoid requiring file-symlink privileges.
   await linkModulesAsync(modules, path.join(target, 'node_modules'));
   await stageAsync(project, target, temp);
 }

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { resolveHarmonyCommand } from '@expo-harmony/expo-modules-autolinking/tool-command';
 
 import {
   resolveHarmonyBuildPath,
@@ -141,43 +142,43 @@ function resolveHarmonyToolchain(): HarmonyToolchain {
 
   let ohpm: HarmonyTool;
   if (env.HARMONY_OHPM) {
-    ohpm = { args: [], command: env.HARMONY_OHPM, source: 'override' };
+    ohpm = { ...resolveHarmonyCommand('ohpm', [], env), source: 'override' };
   } else {
-    const devEcoOhpm = existingFile(layouts.map(layout => path.join(
+    const entry = layouts.map(layout => ({
+      node: devEcoNode(layout, platform, { ...env, HARMONY_NODE: env.HARMONY_OHPM_NODE || env.HARMONY_NODE }),
+      script: path.join(layout.toolsRoot, 'ohpm', 'bin', 'pm-cli.js'),
+    })).find(candidate => candidate.node && fs.existsSync(candidate.script));
+    const command = existingFile(layouts.map(layout => path.join(
       layout.toolsRoot,
       'ohpm',
       'bin',
       platform === 'win32' ? 'ohpm.bat' : 'ohpm'
     )));
-    ohpm = devEcoOhpm
-      ? { args: [], command: devEcoOhpm, source: 'deveco' }
-      : { args: [], command: platform === 'win32' ? 'ohpm.bat' : 'ohpm', source: 'path' };
+
+    ohpm = entry
+      ? { args: [entry.script], command: entry.node.command, source: 'deveco' }
+      : command
+        ? { args: [], command, source: 'deveco' }
+        : { args: [], command: platform === 'win32' ? 'ohpm.bat' : 'ohpm', source: 'path' };
   }
 
   let hvigor: HarmonyTool;
   if (env.HARMONY_HVIGORW) {
-    if (/\.(?:c|m)?js$/iu.test(env.HARMONY_HVIGORW)) {
-      hvigor = {
-        args: [env.HARMONY_HVIGORW],
-        command: env.HARMONY_NODE || process.execPath,
-        source: 'override',
-      };
-    } else {
-      hvigor = { args: [], command: env.HARMONY_HVIGORW, source: 'override' };
-    }
+    hvigor = { ...resolveHarmonyCommand('hvigorw', [], env), source: 'override' };
   } else {
-    const devEcoHvigor = layouts.map(layout => ({
-      layout,
-      node: devEcoNode(layout, platform, env),
+    const entry = layouts.map(layout => ({
+      node: devEcoNode(layout, platform, { ...env, HARMONY_NODE: env.HARMONY_HVIGOR_NODE || env.HARMONY_NODE }),
       script: path.join(layout.toolsRoot, 'hvigor', 'bin', 'hvigorw.js'),
     })).find(candidate => candidate.node && fs.existsSync(candidate.script));
-    hvigor = devEcoHvigor
-      ? { args: [devEcoHvigor.script], command: devEcoHvigor.node.command, source: 'deveco' }
+
+    hvigor = entry
+      ? { args: [entry.script], command: entry.node.command, source: 'deveco' }
       : { args: [], command: platform === 'win32' ? 'hvigorw.bat' : 'hvigorw', source: 'path' };
   }
 
   const toolsRoot = layouts.find(layout => (
     hvigor.args[0]?.startsWith(`${layout.toolsRoot}${path.sep}`)
+    || ohpm.args[0]?.startsWith(`${layout.toolsRoot}${path.sep}`)
     || ohpm.command.startsWith(`${layout.toolsRoot}${path.sep}`)
   ))?.toolsRoot || null;
 
@@ -201,10 +202,14 @@ function resolveHarmonyToolchain(): HarmonyToolchain {
 function createHarmonyToolchainEnv(toolchain = resolveHarmonyToolchain()): NodeJS.ProcessEnv {
   return {
     ...process.env,
-    HARMONY_OHPM: toolchain.ohpm.command,
-    // A script-based Hvigor invocation must retain both its script and Node executable.
+    HARMONY_OHPM: toolchain.ohpm.args[0] || toolchain.ohpm.command,
+    HARMONY_OHPM_NODE: toolchain.ohpm.args.length > 0 ? toolchain.ohpm.command : undefined,
+    // Script-based tools must retain both their script and Node executable.
     HARMONY_HVIGORW: toolchain.hvigor.args[0] || toolchain.hvigor.command,
-    ...(toolchain.hvigor.args.length > 0 ? { HARMONY_NODE: toolchain.hvigor.command } : {}),
+    HARMONY_HVIGOR_NODE: toolchain.hvigor.args.length > 0 ? toolchain.hvigor.command : undefined,
+    ...(toolchain.hvigor.args.length > 0
+      ? { HARMONY_NODE: toolchain.hvigor.command }
+      : toolchain.ohpm.args.length > 0 ? { HARMONY_NODE: toolchain.ohpm.command } : {}),
     ...(toolchain.sdkHome && !process.env.DEVECO_SDK_HOME
       ? { DEVECO_SDK_HOME: toolchain.sdkHome }
       : {}),

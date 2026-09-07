@@ -1851,6 +1851,7 @@ __metadata:
   resolution: "@expo-harmony/expo-module-scripts@workspace:packages/expo-module-scripts"
   dependencies:
     "@expo-harmony/expo-modules-autolinking": "workspace:*"
+    cross-spawn: "npm:^7.0.6"
     fast-glob: "npm:^3.3.2"
     json5: "npm:2.2.3"
     semver: "npm:7.7.3"
@@ -1868,6 +1869,7 @@ __metadata:
     "@types/node": "npm:18.19.0"
     case: "npm:1.6.3"
     commander: "npm:7.2.0"
+    cross-spawn: "npm:^7.0.6"
     expo-modules-autolinking: "npm:55.0.25"
     json5: "npm:2.2.3"
     metro: "npm:0.83.3"

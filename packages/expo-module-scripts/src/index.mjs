@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { spawn } from 'node:child_process';
+import spawn from 'cross-spawn';
 
 import { normalizeHarmonyModuleMetadata } from '@expo-harmony/expo-modules-autolinking';
+import { resolveHarmonyCommand, terminateProcess } from '@expo-harmony/expo-modules-autolinking/tool-command';
 import JSON5 from 'json5';
 import { sanitizeHarmonyHar } from './har.mjs';
 import { findWorkspacePackages, planWorkspaceBuild, workspaceOverrides, withWorkspaceOverrides } from './workspace.mjs';
@@ -220,46 +221,82 @@ export function fixedHvigorArgs(task = 'assembleHar', moduleName = HARMONY_MODUL
 }
 
 export function resolveModuleCommand(command, args, env = process.env) {
-  if (command === 'ohpm' && env.HARMONY_OHPM) {
-    return { command: env.HARMONY_OHPM, args };
-  }
-  if (command === 'hvigorw' && env.HARMONY_HVIGORW) {
-    return /\.(?:c|m)?js$/i.test(env.HARMONY_HVIGORW)
-      ? {
-          command: env.HARMONY_NODE || process.execPath,
-          args: [env.HARMONY_HVIGORW, ...args],
-        }
-      : { command: env.HARMONY_HVIGORW, args };
-  }
-  return { command, args };
+  return resolveHarmonyCommand(command, args, env);
 }
 
 function spawnCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
+    if (options.signal?.aborted) {
+      reject(options.signal.reason || new DOMException('This operation was aborted', 'AbortError'));
+      return;
+    }
+
     const invocation = resolveModuleCommand(command, args, process.env);
     const child = spawn(invocation.command, invocation.args, {
       cwd: options.cwd,
       env: process.env,
       shell: false,
-      signal: options.signal,
       stdio: options.capture ? ['ignore', 'pipe', 'inherit'] : 'inherit',
     });
+
     let output = '';
     let failure;
+    let stopping;
+    let settled = false;
+    let timer;
+
+    const finish = async (code) => {
+      try {
+        await stopping;
+      } catch (error) {
+        failure = error;
+      }
+
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      options.signal?.removeEventListener('abort', abort);
+
+      if (failure) reject(failure);
+      else if (code === 0) resolve(output);
+      else reject(new Error(`${invocation.command} exited with code ${code}.`));
+    };
+
+    const abort = () => {
+      if (stopping || settled) return;
+
+      failure = options.signal.reason || new DOMException('This operation was aborted', 'AbortError');
+      stopping = Promise.resolve().then(() => terminateProcess(child, 'SIGTERM'));
+      if (process.platform === 'win32') {
+        void finish(null);
+      } else {
+        stopping.catch(() => {
+          void finish(null);
+        });
+        timer = setTimeout(() => {
+          stopping = terminateProcess(child, 'SIGKILL');
+          stopping.catch(() => {
+            void finish(null);
+          });
+        }, 1_000);
+        timer.unref?.();
+      }
+    };
 
     child.stdout?.on('data', (chunk) => {
       output += chunk;
     });
     child.on('error', (error) => {
       failure = error;
+      void finish(null);
     });
 
     // Wait for the aborted child to stop before restoring its OHPM inputs.
     child.on('close', (code) => {
-      if (failure) reject(failure);
-      else if (code === 0) resolve(output);
-      else reject(new Error(`${invocation.command} exited with code ${code}.`));
+      void finish(code);
     });
+    options.signal?.addEventListener('abort', abort, { once: true });
+    if (options.signal?.aborted) abort();
   });
 }
 

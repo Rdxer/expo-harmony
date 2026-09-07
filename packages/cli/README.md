@@ -68,7 +68,7 @@ npx expo-harmony prebuild --check
 
 `prebuild` 固定使用 HarmonyOS 平台和 `@expo-harmony/template` 模板，因此不像官方接受 `--platform` 和 `--template`。依赖安装相关选项会透传给 Expo CLI：`--no-install`、`--npm`/`--yarn`/`--pnpm`/`--bun`（最多选择一个）和 `--skip-dependency-update <packages>`。执行前会先运行一次 doctor（此阶段不要求构建工具就绪），发现阻塞错误时直接中止。
 
-`--clean` 只会清理带有 Expo Harmony 模板标记的原生目录：CNG manifest 缺失、目标不是项目内的普通目录或模板标记异常时都会拒绝删除。`--check` 是只读操作，会把项目镜像到临时目录（`node_modules` 以符号链接共享，不复制），在其中执行一次隔离的 prebuild 后比较受管文件；无差异时退出码为 `0`，有差异时列出变更并以 `2` 退出，且不能与其他会修改工程的选项同时使用。
+`--clean` 只会清理带有 Expo Harmony 模板标记的原生目录：CNG manifest 缺失、目标不是项目内的普通目录或模板标记异常时都会拒绝删除。`--check` 是只读操作，会把项目镜像到临时目录（`node_modules` 中的包目录通过链接共享，Windows 下的普通文件复制到临时目录，无须文件符号链接权限），在其中执行一次隔离的 prebuild 后比较受管文件；无差异时退出码为 `0`，有差异时列出变更并以 `2` 退出，且不能与其他会修改工程的选项同时使用。
 
 ## Build
 

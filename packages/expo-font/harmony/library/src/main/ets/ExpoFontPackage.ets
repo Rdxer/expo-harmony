@@ -34,7 +34,7 @@ class ExpoFontRegistrationCoordinator {
   registerSync(context: ExpoModuleContext, family: string, path: string): void {
     const source = fontCollectionSource(path);
     const collection = text.FontCollection.getGlobalInstance();
-    if (deviceInfo.apiAvailable(23)) collection.loadFontSyncWithCheck(family, source);
+    if (deviceInfo.sdkApiVersion >= 23) collection.loadFontSyncWithCheck(family, source);
     else collection.loadFontSync(family, source);
     context.registerReactNativeFont(family, path);
   }
@@ -45,8 +45,8 @@ class ExpoFontRegistrationCoordinator {
       .then(async (): Promise<void> => {
         const source = fontCollectionSource(path);
         const collection = text.FontCollection.getGlobalInstance();
-        if (deviceInfo.apiAvailable(23)) await collection.loadFontWithCheck(family, source);
-        else if (deviceInfo.apiAvailable(18)) await collection.loadFont(family, source);
+        if (deviceInfo.sdkApiVersion >= 23) await collection.loadFontWithCheck(family, source);
+        else if (deviceInfo.sdkApiVersion >= 18) await collection.loadFont(family, source);
         else collection.loadFontSync(family, source);
         context.registerReactNativeFont(family, path);
       });

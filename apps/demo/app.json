@@ -126,6 +126,19 @@
       "infoPlist": {
         "UIViewControllerBasedStatusBarAppearance": true
       }
+    },
+    "android": {
+      "permissions": [
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.WAKE_LOCK",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE"
+      ],
+      "package": "cn.baoshuo.expoharmonydemo"
     }
   }
 }

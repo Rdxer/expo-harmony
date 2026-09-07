@@ -1093,7 +1093,7 @@ abstract class PlaybackController extends OperationQueue {
 
   setPlaybackRate(rate: number): void {
     const requested: number = bounded(rate, MIN_PLAYBACK_RATE, MAX_PLAYBACK_RATE);
-    if (!deviceInfo.apiAvailable(20)) {
+    if (deviceInfo.sdkApiVersion < 20) {
       const effective: number = legacySpeedValue(nearestLegacySpeed(requested));
       if (Math.abs(effective - requested) > 0.000001) {
         throw new ExpoAudioError('ERR_AUDIO_PLAYBACK_RATE_UNSUPPORTED', `HarmonyOS below API 20 cannot represent playback rate ${requested}.`);
@@ -1289,7 +1289,7 @@ abstract class PlaybackController extends OperationQueue {
   }
 
   private attachPlayerCallbacks(target: media.AVPlayer): void {
-    if (!deviceInfo.apiAvailable(20)) {
+    if (deviceInfo.sdkApiVersion < 20) {
       target.on('audioInterrupt', (event: audio.InterruptEvent): void => {
         if (this.destroyed || this.player !== target) return;
         if (event.hintType === audio.InterruptHint.INTERRUPT_HINT_PAUSE) {
@@ -1434,7 +1434,7 @@ abstract class PlaybackController extends OperationQueue {
     const player = this.player;
     if (player === undefined || !this.isPreparedState(player.state)) return;
 
-    if (deviceInfo.apiAvailable(20)) {
+    if (deviceInfo.sdkApiVersion >= 20) {
       player.setPlaybackRate(this.rateValue);
     } else {
       const speed = nearestLegacySpeed(this.rateValue);
@@ -1980,7 +1980,7 @@ class AudioRecorderController extends OperationQueue {
         url: `fd://${file.fd}`,
       });
 
-      if (deviceInfo.apiAvailable(20)) await recorder.setWillMuteWhenInterrupted(true);
+      if (deviceInfo.sdkApiVersion >= 20) await recorder.setWillMuteWhenInterrupted(true);
     } catch (error) {
       if (recorder !== undefined) {
         try {
@@ -2279,7 +2279,7 @@ class AudioRecorderController extends OperationQueue {
 
     this.requireRecorder('select input');
 
-    if (!deviceInfo.apiAvailable(21)) {
+    if (deviceInfo.sdkApiVersion < 21) {
       throw new ExpoAudioError(
         'ERR_AUDIO_INPUT_SELECTION_UNAVAILABLE',
         `Selecting a recording input requires HarmonyOS API ${INPUT_SELECTION_API} or newer.`,
@@ -2432,7 +2432,7 @@ class ExpoAudioRuntime implements PlaybackDelegate, RecorderDelegate {
       this.audioSessionActivated = false;
 
       if (!this.deactivatingAudioSession) {
-        if (deviceInfo.apiAvailable(20) && this.focusInterrupted && event.reason === audio.AudioSessionDeactivatedReason.DEACTIVATED_LOWER_PRIORITY) {
+        if (deviceInfo.sdkApiVersion >= 20 && this.focusInterrupted && event.reason === audio.AudioSessionDeactivatedReason.DEACTIVATED_LOWER_PRIORITY) {
           return;
         }
 
@@ -2441,7 +2441,7 @@ class ExpoAudioRuntime implements PlaybackDelegate, RecorderDelegate {
       }
     });
 
-    if (deviceInfo.apiAvailable(20)) {
+    if (deviceInfo.sdkApiVersion >= 20) {
       this.sessionManager.on('audioSessionStateChanged', (event: audio.AudioSessionStateChangedEvent): void =>
         this.handleAudioSessionStateChanged(event),
       );
@@ -2618,7 +2618,7 @@ class ExpoAudioRuntime implements PlaybackDelegate, RecorderDelegate {
       this.sessionManager.off('audioSessionDeactivated');
     } catch (_) {}
 
-    if (deviceInfo.apiAvailable(20)) {
+    if (deviceInfo.sdkApiVersion >= 20) {
       try {
         this.sessionManager.off('audioSessionStateChanged');
       } catch (_) {}
@@ -2717,7 +2717,7 @@ class ExpoAudioRuntime implements PlaybackDelegate, RecorderDelegate {
     const nextInterruptionMode: InterruptionMode = normalizeInterruptionMode(next.interruptionMode ?? 'mixWithOthers');
     const routeChanged: boolean = next.shouldRouteThroughEarpiece !== this.mode.shouldRouteThroughEarpiece;
 
-    if (deviceInfo.apiAvailable(20)) {
+    if (deviceInfo.sdkApiVersion >= 20) {
       const earpiece = next.shouldRouteThroughEarpiece === true;
 
       this.sessionManager.setAudioSessionScene(

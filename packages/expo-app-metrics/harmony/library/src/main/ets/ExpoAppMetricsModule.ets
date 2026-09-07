@@ -600,7 +600,7 @@ function availableMemoryBytes(residentKilobytes: bigint): number {
 
 async function readNativeMemoryInfo(): Promise<hidebug.NativeMemInfo> {
   // ArkTS requires a literal here so it can validate and narrow API availability at compile time.
-  if (!deviceInfo.apiAvailable(20)) {
+  if (deviceInfo.sdkApiVersion < 20) {
     throw new ExpoAppMetricsError(
       'ERR_APP_METRICS_MEMORY_API',
       'HarmonyOS HiDebug does not expose the asynchronous application memory API required to avoid blocking the UI thread.',

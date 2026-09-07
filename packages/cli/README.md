@@ -50,7 +50,9 @@ npx expo-harmony start --port 8082
 npx expo-harmony start --clear
 ```
 
-`start` 调用项目本地的 Expo CLI，以 `--dev-client` 模式启动 Metro，并自动设置 `EXPO_METRO_TARGET=harmony`。它只启动 JS 开发服务，不执行原生工程生成、构建、安装、应用启动或设备端口映射，也不要求 HarmonyOS SDK 和设备就绪。新启动的 Metro 在当前终端输出日志，按 Ctrl+C 退出。
+所有命令都会在 CLI 入口、读取应用配置之前设置 `EXPO_HARMONY=1` 和 `EXPO_METRO_TARGET=harmony`。
+
+`start` 调用项目本地的 Expo CLI，以 `--dev-client` 模式启动 Metro。它只启动 JS 开发服务，不执行原生工程生成、构建、安装、应用启动或设备端口映射，也不要求 HarmonyOS SDK 和设备就绪。新启动的 Metro 在当前终端输出日志，按 Ctrl+C 退出。
 
 支持 `--port <number>`（默认 `8081`）和 `--reset-cache`（别名 `--clear`、`-c`）。端口上已有 Metro 时提示并退出，不停止已有服务；此时缓存选项不会生效，需要先停止已有 Metro 后重新执行命令。端口被其他进程占用时会报错。
 

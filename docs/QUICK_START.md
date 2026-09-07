@@ -92,7 +92,7 @@ module.exports = withHarmonyConfig(config, {
 });
 ```
 
-- `EXPO_METRO_TARGET=harmony` 由 `expo-harmony start`、`run`、`build` 和 `export:embed` 自动设置。
+- 所有 `expo-harmony` 命令都会在 CLI 入口自动设置 `EXPO_HARMONY=1` 和 `EXPO_METRO_TARGET=harmony` 并传递给子进程；无需在命令前添加 `cross-env`。应用配置和插件也可以使用这些变量判断 Harmony 环境。
 - `enabled` 为 false 时 `withHarmonyConfig` 原样返回配置，也不加载 RNOH 的依赖。
 - `aliases` 把 `react` 指到 `react-harmony`，是两套版本共存的关键一环。
 - demo 里还有一段给 expo-router 补 `nodeModulesPaths` 的代码，那是 Yarn workspace 布局下的处理，单包项目用不到。

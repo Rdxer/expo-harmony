@@ -90,6 +90,9 @@ async function runAsync(
   argv: string[] = process.argv.slice(2),
   io: Pick<Console, 'error' | 'log' | 'warn'> = console
 ): Promise<number> {
+  process.env.EXPO_HARMONY = '1';
+  process.env.EXPO_METRO_TARGET = 'harmony';
+
   const invocation = parseInvocation(argv);
   if (invocation.command === 'help') {
     io.log(Help);

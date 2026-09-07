@@ -121,7 +121,7 @@ npx expo-harmony run \
   --port 8081
 ```
 
-`run` 会依次执行环境诊断、确保原生工程（缺失时自动预构建，`--sync` 强制重新生成，否则校验 CNG 状态）、选择设备、Release 生产导出、OHPM 安装、Hvigor 构建、Metro 端口反向映射（仅 Debug）、HAP 安装和 Ability 启动。模块接线的最终正确性由 OHPM、Hvigor、CMake 和 ArkTS 编译器验证。
+`run` 会依次执行环境诊断、确保原生工程（缺失时自动预构建，`--sync` 强制重新生成，否则复用已有工程）、选择设备、Release 生产导出、OHPM 安装、Hvigor 构建、Metro 端口反向映射（仅 Debug）、HAP 安装和 Ability 启动。模块接线的最终正确性由 OHPM、Hvigor、CMake 和 ArkTS 编译器验证。
 
 常用选项：
 

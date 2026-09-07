@@ -68,9 +68,9 @@ function nonEmptyOrNull(value: string | undefined): string | null {
 }
 
 function installationTime(info: bundleManager.BundleInfo): number {
-  let time = info.installTime;
+  let time: number = info.installTime ?? 0;
   // ArkTS requires the literal API level here to narrow firstInstallTime safely.
-  if (deviceInfo.apiAvailable(18) && info.firstInstallTime !== undefined) {
+  if (deviceInfo.sdkApiVersion >= 18 && info.firstInstallTime !== undefined) {
     time = info.firstInstallTime;
   }
   return checkedTimestamp(time, 'installation', 'ERR_APPLICATION_INSTALLATION_TIME');

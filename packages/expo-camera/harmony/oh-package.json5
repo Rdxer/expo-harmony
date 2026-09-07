@@ -1,27 +1,26 @@
 {
-  "modelVersion": "5.0.0",
-  "name": "expo-camera-harmony",
-  "version": "55.0.19-harmony.1",
-  "description": "HarmonyOS port of expo-camera",
-  "keywords": [
-    "react-native",
-    "expo",
-    "expo-harmony",
-    "harmonyos"
+  modelVersion: '5.0.0',
+  name: 'expo-camera-harmony',
+  version: '55.0.19-harmony.1',
+  description: 'HarmonyOS port of expo-camera',
+  keywords: [
+    'react-native',
+    'expo',
+    'expo-harmony',
+    'harmonyos',
   ],
-  "homepage": "https://github.com/renbaoshuo/expo-harmony/tree/master/packages/expo-camera#readme",
-  "repository": "https://github.com/renbaoshuo/expo-harmony",
-  "author": {
-    "name": "Baoshuo",
-    "email": "i@baoshuo.ren",
-    "url": "https://github.com/renbaoshuo"
+  homepage: 'https://github.com/renbaoshuo/expo-harmony/tree/master/packages/expo-camera#readme',
+  repository: 'https://github.com/renbaoshuo/expo-harmony',
+  author: {
+    name: 'Baoshuo',
+    email: 'i@baoshuo.ren',
+    url: 'https://github.com/renbaoshuo',
   },
-  "license": "MIT",
-  "dependencies": {
-    "@expo-harmony/expo-camera": "./library"
+  license: 'MIT',
+  dependencies: {
+    '@expo-harmony/expo-camera': './library',
   },
-  "overrides": {
-    "@expo-harmony/expo-modules-core": "55.0.25-harmony.1",
-    "@rnoh/react-native-openharmony": "0.84.1"
-  }
+  overrides: {
+    '@rnoh/react-native-openharmony': '0.84.1',
+  },
 }

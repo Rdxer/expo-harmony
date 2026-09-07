@@ -212,12 +212,14 @@ npm run run:harmony
 **方式 B — 分步运行**
 
 ```bash
-# 终端 1：启动 Metro
-npm run start:harmony -- --port 8081
+# 终端 1：启动 Metro（必须设置 EXPO_METRO_TARGET=harmony）
+EXPO_METRO_TARGET=harmony npx expo start --dev-client --port 8081
 
 # 终端 2：构建并运行（不启动 Metro）
 npm run run:harmony -- --no-bundler --port 8081
 ```
+
+> **注意**：`npm run start:harmony` 可能遇到超时问题，推荐直接用 `EXPO_METRO_TARGET=harmony npx expo start --dev-client --port 8081` 替代。
 
 适用场景：需要单独观察 Metro 日志，或复用已有 Metro 实例。
 

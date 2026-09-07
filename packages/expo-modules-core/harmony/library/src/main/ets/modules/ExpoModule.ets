@@ -484,7 +484,7 @@ export class ExpoModuleContext {
 
     const manager = abilityAccessCtrl.createAtManager();
 
-    if (deviceInfo.apiAvailable(20)) {
+    if (deviceInfo.sdkApiVersion >= 20) {
       return manager.getSelfPermissionStatus(permission) as number as ExpoPermissionStatus;
     }
 

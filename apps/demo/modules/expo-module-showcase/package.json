@@ -1,6 +1,7 @@
 {
   "name": "expo-module-showcase",
   "version": "1.0.0",
+  "description": "Expo module showcase for demo app",
   "keywords": [
     "react-native",
     "expo",

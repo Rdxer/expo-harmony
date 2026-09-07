@@ -44,11 +44,6 @@
   "peerDependencies": {
     "@expo/config": "55.0.17"
   },
-  "peerDependenciesMeta": {
-    "@expo/config": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@types/node": "18.19.0",
     "typescript": "^6.0.3"

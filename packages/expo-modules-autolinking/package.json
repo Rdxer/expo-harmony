@@ -52,11 +52,6 @@
   "peerDependencies": {
     "@react-native-oh/react-native-harmony-cli": "^0.84.1"
   },
-  "peerDependenciesMeta": {
-    "@react-native-oh/react-native-harmony-cli": {
-      "optional": true
-    }
-  },
   "engines": {
     "node": ">=20"
   },

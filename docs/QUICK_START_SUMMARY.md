@@ -73,9 +73,9 @@ npm run prebuild:harmony   # 生成 harmony/ 原生工程
 npm run run:harmony        # 构建 HAP + 安装 + 启动
 ```
 
-## 已移植的 Expo 模块（30+）
+## 已移植的 Expo 模块（29 个）
 
-`expo-router`、`expo-camera`、`expo-asset`、`expo-font`、`expo-file-system`、`expo-constants`、`expo-device`、`expo-haptics`、`expo-linking`、`expo-crypto`、`expo-battery`、`expo-blur`、`expo-audio`、`expo-fetch` 等。
+`expo-app-metrics`、`expo-application`、`expo-asset`、`expo-audio`、`expo-background-fetch`、`expo-background-task`、`expo-battery`、`expo-blur`、`expo-camera`、`expo-constants`、`expo-crypto`、`expo-fetch`、`expo-file-system`、`expo-font`、`expo-haptics`、`expo-keep-awake`、`expo-linear-gradient`、`expo-linking`、`expo-module-scripts`、`expo-modules-autolinking`、`expo-modules-core`、`expo-navigation-bar`、`expo-network`、`expo-router`、`expo-sharing`、`expo-splash-screen`、`expo-status-bar`、`expo-system-ui`、`expo-task-manager`。
 
 ## 关键机制
 
@@ -201,6 +201,13 @@ npm run run:harmony
 ```
 
 自动完成：环境诊断 → 构建 HAP → 安装到设备/模拟器 → 启动应用。Debug 模式自动起 Metro（`EXPO_METRO_TARGET=harmony`），支持热更新。
+
+常用选项：
+
+- `--device <id-or-name>`：指定已连接的设备 ID，或按名称启动本地模拟器。存在多个候选目标时必须指定。
+- `--variant release`：走生产构建，不启动 Metro。
+- `--port <number>`：Metro 端口和设备反向映射端口，默认 8081。
+- `--no-bundler`：连接已在运行的 Metro，不起新的。
 
 **方式 B — 分步运行**
 

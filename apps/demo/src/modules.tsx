@@ -1741,26 +1741,12 @@ function BleDemo() {
   ) => {
     const mgr = manager.current;
     if (!mgr) throw new Error('BLE 管理器未初始化');
-    if (withResponse) {
-      // 有响应模式：Android 自动处理分片
-      await mgr.writeCharacteristic(deviceId, serviceId, charId, data, true);
-    } else {
-      // 无响应模式：按协商后的 MTU 分包，每包不超过 ATT_MTU - 3
-      const chunkSize = mtuRef.current - 3;
-      if (data.length <= chunkSize) {
-        // 数据小于 MTU，一次性发送
-        await mgr.writeCharacteristic(deviceId, serviceId, charId, data, false);
-      } else {
-        // 数据超过 MTU，按 chunkSize 分包
-        for (let offset = 0; offset < data.length; offset += chunkSize) {
-          const chunk = data.slice(offset, offset + chunkSize);
-          await mgr.writeCharacteristic(deviceId, serviceId, charId, chunk, false);
-          if (offset + chunkSize < data.length) {
-            await new Promise(resolve => setTimeout(resolve, 30));
-          }
-        }
-      }
+    const maxPayload = mtuRef.current - 3;
+    if (!withResponse && data.length > maxPayload) {
+      setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⚠️ 无响应写入 ${data.length} 字节，MTU 载荷 ${maxPayload}，超出部分由应用层协议处理`]);
     }
+    // 直接发送，不分包（分包属于应用层协议职责）
+    await mgr.writeCharacteristic(deviceId, serviceId, charId, data, withResponse);
   };
 
   const writeChar = (serviceId: string, charId: string) => writeAction.run(async () => {

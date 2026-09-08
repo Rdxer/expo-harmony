@@ -81,7 +81,15 @@
         }
       ],
       "./plugins/withAudioFixture",
-      "@expo-harmony/prebuild-config"
+      "@expo-harmony/prebuild-config",
+      [
+        "react-native-ble-nitro",
+        {
+          "isBackgroundEnabled": true,
+          "modes": ["central"],
+          "bluetoothAlwaysPermission": "允许 $(PRODUCT_NAME) 连接蓝牙设备"
+        }
+      ]
     ],
     "harmony": {
       "bundleName": "cn.baoshuo.expoharmonydemo",
@@ -116,6 +124,9 @@
         },
         {
           "name": "ohos.permission.GET_NETWORK_INFO"
+        },
+        {
+          "name": "ohos.permission.ACCESS_BLUETOOTH"
         }
       ],
       "backgroundColor": "#F2F2F7",

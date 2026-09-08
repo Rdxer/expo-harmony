@@ -25,7 +25,8 @@ import * as SystemUI from 'expo-system-ui';
 import * as TaskManager from 'expo-task-manager';
 import { fetch as expoFetch } from 'expo/fetch';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, PermissionsAndroid, Platform, StyleSheet, Switch, Text, View } from 'react-native';
+import { BleNitro, BleNitroManager, type BLEDevice } from 'react-native-ble-nitro';
 
 import { antDesignFontAsset, DYNAMIC_FONT_FAMILY } from './fixtures';
 import { AppMetricsDemo } from './appMetrics';
@@ -1479,6 +1480,227 @@ function BackgroundTaskDemo() {
   );
 }
 
+function BleDemo() {
+  const manager = useRef<BleNitroManager | null>(null);
+  const [bleState, setBleState] = useState<string>('检查中');
+  const [scanning, setScanning] = useState(false);
+  const [devices, setDevices] = useState<BLEDevice[]>([]);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [requestingPerm, setRequestingPerm] = useState(false);
+  const [connectedDeviceId, setConnectedDeviceId] = useState<string | null>(null);
+  const action = useAsyncResult();
+
+  useEffect(() => {
+    const mgr = BleNitro.instance();
+    manager.current = mgr;
+    const sub = mgr.subscribeToStateChange((state) => {
+      setBleState(state);
+    }, true);
+    return () => {
+      sub.remove();
+      mgr.stopScan();
+    };
+  }, []);
+
+  // Android 12+ 需要运行时请求 BLE 相关权限
+  const requestBlePermissions = async () => {
+    if (Platform.OS !== 'android') return;
+    setRequestingPerm(true);
+    try {
+      const permissions = [
+        PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+        PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      ];
+      const results = await PermissionsAndroid.requestMultiple(permissions);
+      const allGranted = Object.values(results).every(
+        r => r === PermissionsAndroid.RESULTS.GRANTED,
+      );
+      if (allGranted) {
+        // 权限已授予，重新检查 BLE 状态
+        const mgr = manager.current;
+        if (mgr) {
+          setBleState(mgr.state());
+        }
+      }
+      return allGranted;
+    } finally {
+      setRequestingPerm(false);
+    }
+  };
+
+  const isUnauthorized = bleState === 'Unauthorized';
+  const isPoweredOff = bleState === 'PoweredOff';
+  const isPoweredOn = bleState === 'PoweredOn';
+
+  const startScan = () => {
+    setDevices([]);
+    setScanError(null);
+    setScanning(true);
+    const mgr = manager.current;
+    if (!mgr) return;
+    mgr.startScan({}, (device) => {
+      setDevices(prev => {
+        const exists = prev.find(d => d.id === device.id);
+        if (exists) {
+          return prev.map(d => d.id === device.id ? device : d);
+        }
+        return [...prev, device];
+      });
+    }, (error) => {
+      setScanning(false);
+      setScanError(error);
+    });
+  };
+
+  const stopScan = () => action.run(async () => {
+    manager.current?.stopScan();
+    setScanning(false);
+    return `扫描已停止，共发现 ${devices.length} 个设备`;
+  });
+
+  const connectToDevice = (device: BLEDevice) => action.run(async () => {
+    const mgr = manager.current;
+    if (!mgr) throw new Error('BLE 管理器未初始化');
+    const connectWithTimeout = (deviceId: string, timeoutMs = 15000) =>
+      Promise.race([
+        mgr.connect(deviceId, (_deviceId, _interrupted, _error) => {
+          // 设备断开连接（用户主动断开或设备自动断开）
+          setConnectedDeviceId(null);
+          Alert.alert('连接已断开', _interrupted ? '设备异常断开' : '已断开连接');
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`连接超时 (${timeoutMs / 1000}s)`)), timeoutMs),
+        ),
+      ]);
+    try {
+      const connectedId = await connectWithTimeout(device.id);
+      setConnectedDeviceId(connectedId);
+      const deviceLabel = device.name || device.id;
+      Alert.alert('连接成功', `已连接 ${deviceLabel}`);
+      await mgr.discoverServices(connectedId);
+      const services = await mgr.getServices(connectedId);
+      return JSON.stringify({
+        id: connectedId,
+        name: device.name || '未命名',
+        rssi: device.rssi,
+        servicesCount: services.length,
+        serviceUUIDs: services,
+      }, null, 2);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`连接失败: ${msg}`);
+    }
+  });
+
+  const disconnectDevice = () => action.run(async () => {
+    const mgr = manager.current;
+    if (!mgr || !connectedDeviceId) throw new Error('未连接任何设备');
+    await mgr.disconnect(connectedDeviceId);
+    setConnectedDeviceId(null);
+    return `已断开 ${connectedDeviceId}`;
+  });
+
+  return (
+    <>
+      <Panel eyebrow="BLE 状态" title="蓝牙适配器">
+        <DataRow
+          label="状态"
+          value={<Tag tone={isPoweredOn ? 'success' : 'danger'}>{bleState}</Tag>}
+        />
+        {connectedDeviceId && (
+          <DataRow
+            label="已连接"
+            value={<Tag tone="success">设备 {connectedDeviceId.slice(0, 17)}…</Tag>}
+          />
+        )}
+        {isUnauthorized && (
+          <ActionRow>
+            <ActionButton
+              disabled={requestingPerm}
+              label={requestingPerm ? '请求中...' : '请求蓝牙权限'}
+              onPress={() => void requestBlePermissions()}
+            />
+          </ActionRow>
+        )}
+        {isPoweredOff && (
+          <ActionRow>
+            <ActionButton
+              label="打开蓝牙设置"
+              onPress={() => void manager.current?.openSettings()}
+              tone="secondary"
+            />
+          </ActionRow>
+        )}
+        <ActionRow>
+          <ActionButton
+            disabled={!isPoweredOn || scanning}
+            label="扫描设备"
+            onPress={() => void startScan()}
+            testID="ble-start-scan"
+          />
+          <ActionButton
+            disabled={!scanning}
+            label="停止扫描"
+            onPress={() => void stopScan()}
+            testID="ble-stop-scan"
+            tone="secondary"
+          />
+          {connectedDeviceId && (
+            <ActionButton
+              label="断开连接"
+              onPress={() => void disconnectDevice()}
+              tone="danger"
+            />
+          )}
+        </ActionRow>
+        {scanError ? <Note>扫描错误: {scanError}</Note> : null}
+      </Panel>
+
+      <Panel
+        eyebrow="发现设备"
+        title={`${devices.length} 个设备`}
+      >
+        {devices.length === 0
+          ? <Note>点击「扫描设备」开始搜索附近的 BLE 设备。需确保蓝牙已开启。</Note>
+          : devices.slice(0, 20).map(device => {
+              const isThisConnected = device.id === connectedDeviceId;
+              return (
+                <View key={device.id} style={styles.bleDeviceRow}>
+                  <View style={styles.bleDeviceInfo}>
+                    <Text style={styles.bleDeviceName}>
+                      {device.name || '未知设备'}
+                      {isThisConnected ? ' 🛜 已连接' : ''}
+                    </Text>
+                    <Text style={styles.bleDeviceId}>{device.id}</Text>
+                    <Text style={styles.bleDeviceMeta}>
+                      RSSI: {device.rssi ?? 'N/A'} dBm
+                      {device.serviceUUIDs ? ` · 服务: ${device.serviceUUIDs.length}` : ''}
+                    </Text>
+                  </View>
+                  {isThisConnected ? (
+                    <ActionButton
+                      label="断开"
+                      onPress={() => void disconnectDevice()}
+                      tone="danger"
+                    />
+                  ) : (
+                    <ActionButton
+                      label="连接"
+                      onPress={() => void connectToDevice(device)}
+                      tone="secondary"
+                    />
+                  )}
+                </View>
+              );
+            })}
+      </Panel>
+
+      <ResultPanel state={action.state} />
+    </>
+  );
+}
+
 export function ModuleDemo({ id }: { id: ModuleId }) {
   switch (id) {
     case 'asset': return <AssetDemo />;
@@ -1494,6 +1716,7 @@ export function ModuleDemo({ id }: { id: ModuleId }) {
     case 'linear-gradient': return <LinearGradientDemo />;
     case 'navigation-bar': return <NavigationBarDemo />;
     case 'sharing': return <SharingDemo />;
+    case 'ble': return <BleDemo />;
     case 'network': return <NetworkDemo />;
     case 'camera': return <CameraDemo />;
     case 'battery': return <BatteryDemo />;
@@ -1535,4 +1758,9 @@ const styles = StyleSheet.create({
   cameraFrame: { alignItems: 'center', backgroundColor: palette.canvas, borderColor: palette.lineStrong, borderRadius: 6, borderWidth: 1, height: 320, justifyContent: 'center', overflow: 'hidden' },
   cameraInactive: { color: palette.faint, fontFamily: 'monospace', fontSize: 11, fontWeight: '800', letterSpacing: 1.2 },
   cameraPreview: { height: '100%', width: '100%' },
+  bleDeviceRow: { alignItems: 'center', flexDirection: 'row', gap: 10, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: palette.line },
+  bleDeviceInfo: { flex: 1, gap: 2 },
+  bleDeviceName: { color: palette.text, fontSize: 14, fontWeight: '600' },
+  bleDeviceId: { color: palette.faint, fontFamily: 'monospace', fontSize: 10 },
+  bleDeviceMeta: { color: palette.muted, fontSize: 11, marginTop: 1 },
 });

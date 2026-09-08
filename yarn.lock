@@ -1492,7 +1492,9 @@ __metadata:
     react-dom: "npm:19.2.0"
     react-harmony: "npm:react@19.2.3"
     react-native: "npm:0.83.6"
+    react-native-ble-nitro: "https://github.com/Rdxer/react-native-ble-nitro.git"
     react-native-gesture-handler: "npm:2.30.0"
+    react-native-nitro-modules: "npm:0.35.10"
     react-native-reanimated: "npm:4.2.1"
     react-native-safe-area-context: "npm:5.6.2"
     react-native-screens: "npm:4.23.0"
@@ -11414,6 +11416,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"react-native-ble-nitro@https://github.com/Rdxer/react-native-ble-nitro.git":
+  version: 1.15.1
+  resolution: "react-native-ble-nitro@https://github.com/Rdxer/react-native-ble-nitro.git#commit=95b9558634eb13046274aed01748985edb881d5c"
+  peerDependencies:
+    react-native: ">=0.76.0"
+    react-native-nitro-modules: ">=0.35.0"
+  checksum: 10c0/1883658565d3b76867449a8debcc2b5bc5fcd70d99342f1376bf1d0fbcbabc6a24b7cfccb423a04a81995e199b62c657f1bf627541b97d0fa875e9a640ff802e
+  languageName: node
+  linkType: hard
+
 "react-native-gesture-handler@npm:2.30.0":
   version: 2.30.0
   resolution: "react-native-gesture-handler@npm:2.30.0"
@@ -11445,6 +11457,16 @@ __metadata:
     react: "*"
     react-native: "*"
   checksum: 10c0/28cebd5f1f3632864ff5e342278721d1e5e38627ae73859a8814012116ef15c629fee7137a6c9c97bb05d94bbe639b0b47e69b36fc2735ab53ed31570140663f
+  languageName: node
+  linkType: hard
+
+"react-native-nitro-modules@npm:0.35.10":
+  version: 0.35.10
+  resolution: "react-native-nitro-modules@npm:0.35.10"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+  checksum: 10c0/55c117c418abfb1223053eb93b8604bd7b6edc22ee9568a7017888a78f51dfa8ae5f2d11906c4cf6c87ae41b05ba099dc8958082b8aa1cfe8e1c7c1f3e9aff0e
   languageName: node
   linkType: hard
 

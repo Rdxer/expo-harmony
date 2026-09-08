@@ -36,6 +36,7 @@ export const MODULES = [
   { id: 'navigation-bar', title: '导航栏', packageName: '@expo-harmony/expo-navigation-bar', category: '设备与媒体', summary: '系统导航栏颜色、按键与可见性。' },
   { id: 'network', title: '网络', packageName: '@expo-harmony/expo-network', category: '设备与媒体', summary: '连接类型、可达性、IP 地址与状态事件。' },
   { id: 'sharing', title: '分享', packageName: '@expo-harmony/expo-sharing', category: '设备与媒体', summary: '通过 Harmony 系统面板分享本地文件。' },
+  { id: 'ble', title: '蓝牙 BLE', packageName: 'react-native-ble-nitro', category: '设备与媒体', summary: '扫描、连接、读写 BLE 设备特征值，覆盖 iOS / Android / HarmonyOS。' },
 
   { id: 'background-fetch', title: '后台拉取', packageName: '@expo-harmony/expo-background-fetch', category: '后台任务', summary: 'WorkScheduler 注册与 JavaScript 回调。' },
   { id: 'background-task', title: '后台任务', packageName: '@expo-harmony/expo-background-task', category: '后台任务', summary: '新一代后台任务与调试触发行为。' },

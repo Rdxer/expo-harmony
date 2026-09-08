@@ -25,8 +25,8 @@ import * as SystemUI from 'expo-system-ui';
 import * as TaskManager from 'expo-task-manager';
 import { fetch as expoFetch } from 'expo/fetch';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, PermissionsAndroid, Platform, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { BleNitro, BleNitroManager, type BLEDevice } from 'react-native-ble-nitro';
+import { Alert, Modal, PermissionsAndroid, Platform, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { BleNitro, BleNitroManager, type AsyncSubscription, type BLEDevice } from 'react-native-ble-nitro';
 
 import { antDesignFontAsset, DYNAMIC_FONT_FAMILY } from './fixtures';
 import { AppMetricsDemo } from './appMetrics';
@@ -1537,6 +1537,9 @@ function BleDemo() {
   // 写操作输入
   const [writeHexInputs, setWriteHexInputs] = useState<Record<string, string>>({});
   const [writeWithResponse, setWriteWithResponse] = useState(true);
+  // 填充写入（用于测试 MTU）：弹出输入目标字节数
+  const [padInfo, setPadInfo] = useState<{ serviceId: string; charId: string } | null>(null);
+  const [padTargetSize, setPadTargetSize] = useState('');
 
   // 独立的操作状态跟踪
   const action = useAsyncResult();
@@ -1546,8 +1549,9 @@ function BleDemo() {
 
   // 保存当前连接的设备 ID，供 cleanup 使用（ref 避免闭包过期）
   const connectedIdRef = useRef<string | null>(null);
+  const mtuRef = useRef<number>(23); // 协商后的 MTU，默认 23
   // 订阅回调引用，避免组件重新渲染时丢失订阅
-  const subRefs = useRef<Map<string, { remove: () => void }>>(new Map());
+  const subRefs = useRef<Map<string, AsyncSubscription>>(new Map());
 
   useEffect(() => {
     const mgr = BleNitro.instance();
@@ -1557,12 +1561,20 @@ function BleDemo() {
     }, true);
     return () => {
       sub.remove();
-      // 离开页面时：清理订阅 → 断开已连接设备 → 停止扫描
-      subRefs.current.forEach(s => s.remove());
-      subRefs.current.clear();
+      // 离开页面时：先等待所有取消订阅完成（CCCD 写入 0x0000），再断开连接
+      // 避免 GATT 操作队列（gattOperationQueue）的 isGattOperationInProgress 卡死
+      // 导致下次订阅时 CCCD 写入被阻塞
       const deviceId = connectedIdRef.current;
       if (deviceId) {
-        mgr.disconnect(deviceId).catch(() => {});
+        const unsubPromises = Array.from(subRefs.current.values()).map(s =>
+          s.remove().catch(() => {}),
+        );
+        subRefs.current.clear();
+        Promise.all(unsubPromises).finally(() => {
+          mgr.disconnect(deviceId).catch(() => {});
+        });
+      } else {
+        subRefs.current.clear();
       }
       mgr.stopScan();
     };
@@ -1623,6 +1635,17 @@ function BleDemo() {
   const connectToDevice = (device: BLEDevice) => action.run(async () => {
     const mgr = manager.current;
     if (!mgr) throw new Error('BLE 管理器未初始化');
+
+    // 如果设备已存在连接，先断开确保干净的 native 状态
+    // 避免 cleanup 中未完成的 onConnectionStateChange(STATE_DISCONNECTED)
+    // 在新连接建立后误删 connectedDevices / deviceCallbacks
+    if (mgr.isConnected(device.id)) {
+      setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 设备有残留连接，先断开清理...`]);
+      await mgr.disconnect(device.id);
+      // 等待 native 的 onConnectionStateChange 回调完成清理
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
     const connectWithTimeout = (deviceId: string, timeoutMs = 15000) =>
       Promise.race([
         mgr.connect(deviceId, (_deviceId, _interrupted, _error) => {
@@ -1645,14 +1668,13 @@ function BleDemo() {
       Alert.alert('连接成功', `已连接 ${deviceLabel}`);
       // 先探索服务（确保 GATT 数据库就绪）
       await exploreServices(connectedId);
-      // 探索完成后请求 MTU 512（仅在 Android/HarmonyOS 上有效，iOS 自动管理）
-      if (Platform.OS !== 'ios') {
-        try {
-          const negotiatedMtu = mgr.requestMTU(connectedId, 512);
-          setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] MTU: 请求 512, 协商结果 ${negotiatedMtu}`]);
-        } catch (mtuError) {
-          setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] MTU 请求失败: ${mtuError}`]);
-        }
+      // 协商 MTU：获取实际协商值，用于后续写入分包
+      try {
+        const negotiatedMtu = await (mgr.requestMTU(connectedId, 517) as unknown as Promise<number>);
+        mtuRef.current = negotiatedMtu;
+        setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] MTU 协商完成: ${negotiatedMtu}`]);
+      } catch {
+        setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] MTU 协商失败，使用默认值 23`]);
       }
       return `已连接 ${deviceLabel}`;
     } catch (err) {
@@ -1664,10 +1686,14 @@ function BleDemo() {
   const disconnectDevice = () => action.run(async () => {
     const mgr = manager.current;
     if (!mgr || !connectedDeviceId) throw new Error('未连接任何设备');
-    // 清理所有订阅
-    subRefs.current.forEach(s => s.remove());
+    // 先等待所有取消订阅完成（CCCD 写入 0x0000），再断开连接
+    // 避免 GATT 操作队列卡住
+    const unsubPromises = Array.from(subRefs.current.values()).map(s =>
+      s.remove().catch(() => {}),
+    );
     subRefs.current.clear();
     setSubscribedChars(new Set());
+    await Promise.all(unsubPromises);
     await mgr.disconnect(connectedDeviceId);
     setConnectedDeviceId(null);
     connectedIdRef.current = null;
@@ -1705,7 +1731,38 @@ function BleDemo() {
     return summary;
   });
 
-  // 写入特征值
+  // 写入特征值（无响应模式按 MTU 分包，有响应模式由 Android 自动处理）
+  const writeWithFragmentation = async (
+    deviceId: string,
+    serviceId: string,
+    charId: string,
+    data: number[],
+    withResponse: boolean,
+  ) => {
+    const mgr = manager.current;
+    if (!mgr) throw new Error('BLE 管理器未初始化');
+    if (withResponse) {
+      // 有响应模式：Android 自动处理分片
+      await mgr.writeCharacteristic(deviceId, serviceId, charId, data, true);
+    } else {
+      // 无响应模式：按协商后的 MTU 分包，每包不超过 ATT_MTU - 3
+      const chunkSize = mtuRef.current - 3;
+      if (data.length <= chunkSize) {
+        // 数据小于 MTU，一次性发送
+        await mgr.writeCharacteristic(deviceId, serviceId, charId, data, false);
+      } else {
+        // 数据超过 MTU，按 chunkSize 分包
+        for (let offset = 0; offset < data.length; offset += chunkSize) {
+          const chunk = data.slice(offset, offset + chunkSize);
+          await mgr.writeCharacteristic(deviceId, serviceId, charId, chunk, false);
+          if (offset + chunkSize < data.length) {
+            await new Promise(resolve => setTimeout(resolve, 30));
+          }
+        }
+      }
+    }
+  };
+
   const writeChar = (serviceId: string, charId: string) => writeAction.run(async () => {
     const mgr = manager.current;
     if (!mgr || !connectedDeviceId) throw new Error('未连接');
@@ -1713,11 +1770,48 @@ function BleDemo() {
     const hexStr = writeHexInputs[inputKey] || '';
     const bytes = hexToBytes(hexStr);
     if (bytes.length === 0) throw new Error('请输入要写入的十六进制数据');
-    await mgr.writeCharacteristic(connectedDeviceId, serviceId, charId, bytes, writeWithResponse);
+    await writeWithFragmentation(connectedDeviceId, serviceId, charId, bytes, writeWithResponse);
     const result = `已写入 ${bytes.length} 字节: ${bytesToHex(bytes)}`;
     setCharResults(prev => ({ ...prev, [inputKey]: result }));
     return result;
   });
+
+  // 填充写入（用于测试 MTU）：将数据用 0xFF 填充到指定大小后发送
+  const padWriteChar = (serviceId: string, charId: string) => {
+    setPadInfo({ serviceId, charId });
+    setPadTargetSize('');
+  };
+
+  const doPadWrite = async () => {
+    if (!padInfo || !connectedDeviceId) return;
+    const mgr = manager.current;
+    if (!mgr) return;
+    const key = `${padInfo.serviceId}:${padInfo.charId}`;
+    const hexStr = writeHexInputs[key] || '';
+    const bytes = hexToBytes(hexStr);
+    if (bytes.length === 0) {
+      Alert.alert('提示', '请先输入十六进制数据');
+      return;
+    }
+    const targetSize = parseInt(padTargetSize, 10);
+    if (isNaN(targetSize) || targetSize <= 0) {
+      Alert.alert('提示', '请输入有效的目标字节数');
+      return;
+    }
+    if (targetSize <= bytes.length) {
+      Alert.alert('提示', `目标大小 (${targetSize}) 必须大于当前数据长度 (${bytes.length})`);
+      return;
+    }
+    // 用 0xFF 填充到目标大小
+    const padded = new Uint8Array(targetSize);
+    padded.set(bytes);
+    padded.fill(0xFF, bytes.length);
+    await writeWithFragmentation(connectedDeviceId, padInfo.serviceId, padInfo.charId, Array.from(padded), writeWithResponse);
+    const result = `已填充写入 ${targetSize} 字节 (原 ${bytes.length} + 填充 ${targetSize - bytes.length})`;
+    setCharResults(prev => ({ ...prev, [key]: result }));
+    setPadInfo(null);
+    setPadTargetSize('');
+  };
 
   // 订阅/取消订阅特征值通知
   const toggleSubscribe = async (serviceId: string, charId: string) => {
@@ -1725,25 +1819,33 @@ function BleDemo() {
     if (!mgr || !connectedDeviceId) return;
     const key = `${serviceId}:${charId}`;
     if (subscribedChars.has(key)) {
-      // 取消订阅
+      // 取消订阅：通过 sub.remove() 统一走 unsubcribe，避免重复调用
       try {
-        await mgr.unsubscribeFromCharacteristic(connectedDeviceId, serviceId, charId);
         const sub = subRefs.current.get(key);
-        if (sub) { sub.remove(); subRefs.current.delete(key); }
+        if (sub) {
+          await sub.remove();
+          subRefs.current.delete(key);
+        }
         setSubscribedChars(prev => { const next = new Set(prev); next.delete(key); return next; });
         setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 取消订阅 ${shortUUID(charId)}`]);
       } catch (e) {
         Alert.alert('取消订阅失败', String(e));
       }
     } else {
-      // 订阅
+      // 订阅 - 加超时防止 Promise 挂起
+      setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 正在订阅 ${shortUUID(charId)}...`]);
       try {
-        const sub = await mgr.subscribeToCharacteristic(connectedDeviceId, serviceId, charId, (_charId, data) => {
-          const { hex, ascii } = formatByteData(data);
-          const log = `[${new Date().toLocaleTimeString()}] ${shortUUID(charId)} → HEX: ${hex} | ASCII: ${ascii}`;
-          setNotificationLog(prev => [log, ...prev].slice(0, 100));
-          setCharResults(prev => ({ ...prev, [`notify:${key}`]: log }));
-        });
+        const sub = await Promise.race([
+          mgr.subscribeToCharacteristic(connectedDeviceId, serviceId, charId, (_charId, data) => {
+            const { hex, ascii } = formatByteData(data);
+            const log = `[${new Date().toLocaleTimeString()}] ${shortUUID(charId)} → HEX: ${hex} | ASCII: ${ascii}`;
+            setNotificationLog(prev => [log, ...prev].slice(0, 100));
+            setCharResults(prev => ({ ...prev, [`notify:${key}`]: log }));
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('订阅超时 (10s)')), 10000)
+          ),
+        ]);
         subRefs.current.set(key, sub);
         setSubscribedChars(prev => { const next = new Set(prev); next.add(key); return next; });
         setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 已订阅 ${shortUUID(charId)}`]);
@@ -1885,6 +1987,7 @@ function BleDemo() {
                       <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
                         <ActionButton label="读取" onPress={() => void readChar(svc.id, charId)} tone="secondary" />
                         <ActionButton label="写入" onPress={() => void writeChar(svc.id, charId)} tone="secondary" />
+                        <ActionButton label="填充写入" onPress={() => padWriteChar(svc.id, charId)} tone="secondary" />
                         <ActionButton label={isSubscribed ? '取消订阅' : '订阅'} onPress={() => void toggleSubscribe(svc.id, charId)} tone={isSubscribed ? 'danger' : 'primary'} />
                       </View>
                       <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
@@ -1929,11 +2032,35 @@ function BleDemo() {
         </Panel>
       )}
 
-      {/* 操作结果面板 */}
       {exploreAction.state.phase !== 'idle' && <ResultPanel state={exploreAction.state} />}
       {readAction.state.phase !== 'idle' && <ResultPanel state={readAction.state} />}
       {writeAction.state.phase !== 'idle' && <ResultPanel state={writeAction.state} />}
       <ResultPanel state={action.state} />
+
+      {/* 填充写入弹窗（用于测试 MTU） */}
+      <Modal visible={padInfo !== null} transparent animationType="fade" onRequestClose={() => setPadInfo(null)}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <View style={{ backgroundColor: palette.surface, padding: 20, borderRadius: 8, minWidth: 260 }}>
+            <Text style={{ color: palette.text, fontSize: 14, fontWeight: '600', marginBottom: 8 }}>填充写入</Text>
+            <Text style={{ color: palette.muted, fontSize: 12, marginBottom: 12 }}>
+              目标字节数（当前数据尾部填充 0xFF 到该大小）
+            </Text>
+            <TextInput
+              placeholder="如 512"
+              placeholderTextColor={palette.faint}
+              value={padTargetSize}
+              onChangeText={setPadTargetSize}
+              keyboardType="numeric"
+              autoFocus
+              style={{ backgroundColor: palette.canvas, color: palette.text, padding: 8, borderRadius: 4, marginBottom: 12, fontFamily: 'monospace', fontSize: 14 }}
+            />
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8 }}>
+              <ActionButton label="取消" onPress={() => { setPadInfo(null); setPadTargetSize(''); }} tone="secondary" />
+              <ActionButton label="确认写入" onPress={() => void doPadWrite()} tone="primary" />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }

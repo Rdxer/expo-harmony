@@ -118,7 +118,10 @@ async function runHarmonyUnlockedAsync(
   };
   const steps: Record<string, number> = {};
 
-  await ensureGeneratedProjectAsync(projectRoot, normalizedOptions, steps);
+  await ensureGeneratedProjectAsync(projectRoot, {
+    ...normalizedOptions,
+    skipGeneratedProjectCheck: true,
+  }, steps);
 
   const plan = await timed(steps, 'buildPlan', () => resolveHarmonyBuildPlanAsync(
     projectRoot,

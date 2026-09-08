@@ -4,6 +4,12 @@
 
 为 HarmonyOS 上的 React Native 应用提供 Expo SplashScreen 的原生实现，与官方同版本的 `expo-splash-screen` 配套使用。支持控制启动画面的自动隐藏、手动隐藏和淡出过渡，以及通过配置插件设置启动图片、背景色和深色模式资源。
 
+## 安装
+
+```bash
+npm install @expo-harmony/expo-splash-screen expo-splash-screen@55.0.21
+```
+
 如果需要在预构建时配置 HarmonyOS 原生启动画面，请在 `app.json` 的 `plugins` 中传入 `@expo-harmony/expo-splash-screen`：
 
 ```json

@@ -4,6 +4,12 @@
 
 为 HarmonyOS 上的 React Native 应用提供 Expo Battery 的原生实现，与官方同版本的 `expo-battery` 配套使用。支持读取设备电量、充电状态和低电量模式，以及订阅对应的状态变化。
 
+## 安装
+
+```bash
+npm install @expo-harmony/expo-battery expo-battery@55.0.13
+```
+
 ## Author
 
 **expo-harmony** © [Baoshuo](https://github.com/renbaoshuo), Released under the MIT License.<br>

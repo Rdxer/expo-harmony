@@ -4,6 +4,12 @@
 
 为 HarmonyOS 上的 React Native 应用提供 Expo Sharing 的原生实现，与官方同版本的 `expo-sharing` 配套使用。支持通过系统分享面板分享本地文件、接收其他应用分享的文本、链接和文件，以及将接收的文件复制到应用缓存中。
 
+## 安装
+
+```bash
+npm install @expo-harmony/expo-sharing expo-modules-core@55.0.25 expo-sharing@55.0.20
+```
+
 如果需要接收其他应用的分享，请在 `app.json` 的 `plugins` 中传入 `@expo-harmony/expo-sharing`：
 
 ```json

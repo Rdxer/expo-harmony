@@ -4,6 +4,12 @@
 
 为 HarmonyOS 平台提供 Expo 模块脚手架。包内提供独立的 `create-expo-harmony-module` 命令，命令名与官方的 `create-expo-module` 不同，两者可以在同一环境中共存。它可以从版本化模板创建可发布的独立模块包或应用内的 local 模块，也可以为已有的 Expo 模块补充 Harmony 平台支持。需要 Node.js 20 或更高版本。
 
+## 安装
+
+```bash
+npm install @expo-harmony/create-expo-module
+```
+
 ## 用法
 
 ```sh

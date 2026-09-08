@@ -4,6 +4,12 @@
 
 为 HarmonyOS 上的 React Native 应用提供 Expo Font 的原生实现，与官方同版本的 `expo-font` 配套使用。支持运行时加载和注册自定义字体、将文字渲染为图片，以及通过配置插件预先打包字体资源。
 
+## 安装
+
+```bash
+npm install @expo-harmony/expo-font expo-font@55.0.8
+```
+
 如果需要在预构建时将字体打包到 HarmonyOS 应用中，请在 `app.json` 的 `plugins` 中传入 `@expo-harmony/expo-font`：
 
 ```json

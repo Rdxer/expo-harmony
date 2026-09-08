@@ -4,6 +4,12 @@
 
 为 HarmonyOS 上的 React Native 应用提供 Expo SystemUI 的原生实现，与官方同版本的 `expo-system-ui` 配套使用。支持运行时读取和设置窗口背景色，以及通过配置插件设置初始背景色和浅色、深色或跟随系统的界面模式。
 
+## 安装
+
+```bash
+npm install @expo-harmony/expo-system-ui expo-system-ui@55.0.18
+```
+
 如果需要在 JavaScript 启动前应用背景色和界面模式，请在 `app.json` 的 `plugins` 中传入 `@expo-harmony/expo-system-ui`：
 
 ```json

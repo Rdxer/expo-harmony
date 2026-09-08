@@ -4,10 +4,10 @@
 
 为 HarmonyOS 上的 React Native 应用提供 Expo Router 的原生集成载体，组合 Linking、Screens 和 Safe Area，并支持按需接入 Gesture Handler、Reanimated 和 Worklets，与官方同版本的 expo-router 配套使用。
 
-安装官方 Expo Router 和 HarmonyOS 集成包：
+## 安装
 
-```sh
-npm install expo-router @expo-harmony/expo-router
+```bash
+npm install @expo-harmony/expo-router @react-native-ohos/react-native-gesture-handler@2.30.1 @react-native-ohos/react-native-reanimated@4.0.2-beta.1 @react-native-ohos/react-native-worklets@1.0.0 expo-router@55.0.16
 ```
 
 应用入口继续使用官方 `expo-router/entry`，业务代码也应始终从 `expo-router` 导入，不要直接导入 `@expo-harmony/expo-router`：

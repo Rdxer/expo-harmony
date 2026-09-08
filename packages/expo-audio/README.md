@@ -4,6 +4,12 @@
 
 为 HarmonyOS 上的 React Native 应用提供 Expo Audio 的原生实现，支持音频播放、播放列表、预加载、录音、音频焦点、后台播放和锁屏媒体控制，与官方同版本的 `expo-audio` 配套使用。JavaScript API、类型和 React Hooks 由官方 `expo-audio` 包提供。
 
+## 安装
+
+```bash
+npm install @expo-harmony/expo-audio expo-audio@55.0.14
+```
+
 使用录音或后台音频能力时，必须在 `app.json` 的 `plugins` 中配置 `@expo-harmony/expo-audio`：
 
 ```json

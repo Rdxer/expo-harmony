@@ -4,6 +4,12 @@
 
 为 HarmonyOS 上的 React Native 应用提供 Expo KeepAwake 的原生实现，与官方同版本的 `expo-keep-awake` 配套使用。支持按标签保持屏幕常亮、释放常亮请求，以及查询功能可用性。
 
+## 安装
+
+```bash
+npm install @expo-harmony/expo-keep-awake expo-keep-awake@55.0.8
+```
+
 应用进入后台时会暂停屏幕常亮，返回前台后按仍然有效的标签恢复；所有标签释放后恢复系统默认的屏幕休眠行为。
 
 ## Author

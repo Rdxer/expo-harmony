@@ -4,6 +4,12 @@
 
 为 HarmonyOS 上的 React Native 应用提供 Expo Background Task 的原生实现，与官方同版本的 `expo-background-task` 和 `expo-task-manager` 配套使用。支持通过 HarmonyOS Work Scheduler 注册、查询和注销后台任务，并由 Task Manager 持久化任务注册与执行状态。
 
+## 安装
+
+```bash
+npm install @expo-harmony/expo-background-task expo-background-task@55.0.18 expo-task-manager@~55.0.16
+```
+
 使用前必须在 `app.json` 的 `plugins` 中传入 `@expo-harmony/expo-background-task`，并将其放在 `@expo-harmony/prebuild-config` 之前：
 
 ```json

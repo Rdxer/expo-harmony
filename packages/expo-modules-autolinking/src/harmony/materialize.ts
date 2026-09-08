@@ -1,6 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { spawn } from 'node:child_process';
+import spawn from 'cross-spawn';
+import { resolveHarmonyCommand } from '../utilities/toolCommand';
+import { terminateProcess } from '../utilities/terminateProcess';
 
 import { HarmonyAutolinkingError } from '../errors';
 import type {
@@ -36,19 +38,6 @@ interface MaterializeModuleArtifactOptions {
   readonly buildType: BuildType;
   readonly arkTs?: ArkTsModulePackage;
   readonly rnoh: RnohMetadata;
-}
-
-function materializationError(
-  code: string,
-  message: string,
-  options: MaterializeModuleArtifactOptions,
-  details?: unknown
-): never {
-  throw new HarmonyAutolinkingError(code, message, {
-    packageName: options.packageName,
-    stage: 'artifact-materialize',
-    details,
-  });
 }
 
 function createFixedHvigorBuildDescriptor(
@@ -114,6 +103,7 @@ async function isNonEmptyRegularHarAsync(
       { packageName, stage: 'artifact-materialize' }
     );
   }
+
   return stat.size > 0;
 }
 
@@ -124,17 +114,22 @@ async function validateBundledArtifactsAsync(
     ...options.rnoh.harPaths,
     ...(options.arkTs ? [options.arkTs.harPath] : []),
   ])].sort(compareText);
+
   for (const relative of harPaths) {
     const harPath = path.resolve(options.packageRoot, relative);
     if (!await isNonEmptyRegularHarAsync(harPath, options.packageRoot, options.packageName)) {
-      materializationError(
+      throw new HarmonyAutolinkingError(
         'SOURCE_ARTIFACT_NOT_PUBLISHED',
         `${options.packageName} has a missing or empty Harmony HAR.`,
-        options,
-        { harPath: relative }
+        {
+          packageName: options.packageName,
+          stage: 'artifact-materialize',
+          details: { harPath: relative },
+        }
       );
     }
   }
+
   return { kind: 'bundled', harPaths };
 }
 
@@ -162,6 +157,7 @@ async function materializeModuleArtifactAsync(
     packageName: options.packageName,
     mustExist: false,
   });
+
   return {
     kind: 'local-source',
     outputPath,
@@ -193,18 +189,8 @@ function fixedLocalSourceBuildSteps(build: FixedHvigorBuildDescriptor): Readonly
 }
 
 function resolveFixedBuildStep(step: FixedBuildStep, env: NodeJS.ProcessEnv): FixedBuildStep {
-  if (step.id === 'ohpm-install') {
-    return env.HARMONY_OHPM ? { ...step, executable: env.HARMONY_OHPM } : step;
-  }
-
-  const configured = env.HARMONY_HVIGORW;
-  if (configured) {
-    return /\.(?:c|m)?js$/iu.test(configured)
-      ? { ...step, executable: env.HARMONY_NODE || process.execPath, args: [configured, ...step.args] }
-      : { ...step, executable: configured };
-  }
-
-  return step;
+  const invocation = resolveHarmonyCommand(step.executable, step.args, env);
+  return { ...step, executable: invocation.command, args: invocation.args };
 }
 
 async function runFixedBuildStepAsync(
@@ -215,8 +201,6 @@ async function runFixedBuildStepAsync(
   const timeoutMs = options.timeoutMs ?? DefaultBuildTimeoutMs;
   const outputLimit = options.outputLimit ?? DefaultOutputLimit;
   const stage = `artifact-materialize:${step.id}`;
-  const env = { ...process.env, ...options.env };
-  const resolvedStep = resolveFixedBuildStep(step, env);
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0
     || !Number.isInteger(outputLimit) || outputLimit <= 0) {
     throw new HarmonyAutolinkingError(
@@ -225,6 +209,9 @@ async function runFixedBuildStepAsync(
       { packageName, stage }
     );
   }
+
+  const env = { ...process.env, ...options.env };
+  const command = resolveFixedBuildStep(step, env);
 
   const result = await new Promise<{
     code: number | null;
@@ -235,10 +222,12 @@ async function runFixedBuildStepAsync(
     let output = '';
     let timedOut = false;
     let settled = false;
-    let killTimer: NodeJS.Timeout | undefined;
+    let stopping: Promise<void> | undefined;
+    let escalation: NodeJS.Timeout | undefined;
     let child;
+
     try {
-      child = spawn(resolvedStep.executable, [...resolvedStep.args], {
+      child = spawn(command.executable, [...command.args], {
         cwd: step.cwd,
         env,
         shell: false,
@@ -248,32 +237,55 @@ async function runFixedBuildStepAsync(
       reject(cause);
       return;
     }
+
     child.stdout.on('data', (chunk: Buffer) => {
       output = appendBounded(output, chunk, outputLimit);
     });
     child.stderr.on('data', (chunk: Buffer) => {
       output = appendBounded(output, chunk, outputLimit);
     });
+
+    const finish = async (code, signal, error?) => {
+      try {
+        await stopping;
+      } catch (cause) {
+        error = cause;
+      }
+
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (escalation) clearTimeout(escalation);
+
+      if (error) reject(error);
+      else resolve({ code, signal, output, timedOut });
+    };
+
     const timeout = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGTERM');
-      killTimer = setTimeout(() => child.kill('SIGKILL'), 1_000);
-      killTimer.unref?.();
+      stopping = Promise.resolve().then(() => terminateProcess(child, 'SIGTERM'));
+      if (process.platform === 'win32') {
+        void finish(null, 'SIGTERM');
+      } else {
+        stopping.catch((error) => {
+          void finish(null, null, error);
+        });
+        escalation = setTimeout(() => {
+          stopping = terminateProcess(child, 'SIGKILL');
+          stopping.catch((error) => {
+            void finish(null, null, error);
+          });
+        }, 1_000);
+        escalation.unref?.();
+      }
     }, timeoutMs);
     timeout.unref?.();
+
     child.on('error', (cause) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      if (killTimer) clearTimeout(killTimer);
-      reject(cause);
+      void finish(null, null, cause);
     });
     child.on('close', (code, signal) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      if (killTimer) clearTimeout(killTimer);
-      resolve({ code, signal, output, timedOut });
+      void finish(code, signal);
     });
   }).catch((cause) => {
     throw new HarmonyAutolinkingError(
@@ -307,6 +319,7 @@ async function materializeLocalSourceAsync(
       { packageName: module.packageName, stage: 'artifact-materialize' }
     );
   }
+
   const artifact = module.artifact;
   const projectRoot = await fs.promises.realpath(options.projectRoot);
   const packageRoot = await fs.promises.realpath(module.packageRoot);
@@ -324,6 +337,7 @@ async function materializeLocalSourceAsync(
       { packageName: module.packageName, stage: 'artifact-materialize' }
     );
   }
+
   const harPath = await resolveInsideAsync(
     packageRoot,
     module.arkTs.harPath,
@@ -334,12 +348,13 @@ async function materializeLocalSourceAsync(
   for (const step of fixedLocalSourceBuildSteps(artifact.build)) {
     await runFixedBuildStepAsync(step, module.packageName, options);
   }
-  const outputReady = await isNonEmptyRegularHarAsync(
+
+  const ready = await isNonEmptyRegularHarAsync(
     artifact.outputPath,
     artifact.build.cwd,
     module.packageName
   );
-  if (!outputReady) {
+  if (!ready) {
     throw new HarmonyAutolinkingError(
       'SOURCE_BUILD_FAILED',
       `Hvigor did not produce a non-empty HAR at ${normalizeSlashes(path.relative(packageRoot, artifact.outputPath))}.`,
@@ -359,6 +374,7 @@ async function materializeLocalSourceAsync(
       { packageName: module.packageName, stage: 'artifact-materialize' }
     );
   }
+
   return {
     packageName: module.packageName,
     harPath,

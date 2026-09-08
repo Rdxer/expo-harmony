@@ -51,7 +51,9 @@ my-expo-module/
 
 ## 工具链
 
-`ohpm` 和 `hvigorw` 可分别通过环境变量 `HARMONY_OHPM` 和 `HARMONY_HVIGORW` 指定路径；当 `HARMONY_HVIGORW` 指向 JS 脚本时，会改用 `HARMONY_NODE`（缺省为当前 Node 可执行文件）来运行。
+`ohpm` 和 `hvigorw` 可分别通过环境变量 `HARMONY_OHPM` 和 `HARMONY_HVIGORW` 指定路径；任一变量指向 JS 脚本（例如 `pm-cli.js` 或 `hvigorw.js`）时，会改用 `HARMONY_NODE`（缺省为当前 Node 可执行文件）来运行。Windows 的 `.bat`、`.cmd` 入口和 PATH 中的命令也受支持。变量中只填写路径，不附加参数或引号。
+
+需要分别指定两个工具的 Node 时，使用 `HARMONY_OHPM_NODE` 和 `HARMONY_HVIGOR_NODE`；它们优先于 `HARMONY_NODE`。CLI 向子进程传递工具链时会保留各自的 Node 路径。
 
 ## 在模块包中使用
 

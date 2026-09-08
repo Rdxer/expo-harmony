@@ -48,9 +48,9 @@ function updateModuleJson(json) {
   if (found.length === 1) {
     const ability = found[0];
 
-    if (ability.type !== 'workScheduler' ||
-      ability.srcEntry !== EXTENSION_SOURCE ||
-      ability.exported !== false) {
+    if (ability.type !== 'workScheduler'
+      || ability.srcEntry !== EXTENSION_SOURCE
+      || ability.exported !== false) {
       throw new TypeError(`Harmony module already declares ${EXTENSION_NAME} with incompatible settings.`);
     }
 
@@ -74,18 +74,18 @@ function updateModuleJson(json) {
   };
 }
 
-const withBackgroundFetch = config => {
+const withBackgroundFetch = (config) => {
   const enabled = config.harmony?.bundleName || config.platforms?.includes('harmony');
   if (!enabled) return config;
 
   config = registerHarmonyConfigPlugin(config, pkg.name);
-  config = withModuleJson(config, mod => {
+  config = withModuleJson(config, (mod) => {
     mod.modResults = updateModuleJson(mod.modResults);
 
     return mod;
   });
 
-  return withHarmonyDangerousMod(config, async mod => {
+  return withHarmonyDangerousMod(config, async (mod) => {
     const file = await HarmonyPaths.resolveHarmonyPath(
       mod.modRequest.platformProjectRoot,
       path.posix.join(path.posix.dirname(HarmonyPaths.HARMONY_PATHS.moduleJson), EXTENSION_SOURCE)

@@ -1,4 +1,4 @@
-import childProcess from 'node:child_process';
+import crossSpawn from 'cross-spawn';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -6,6 +6,7 @@ import { RnohArtifacts } from '../../config/constants';
 import { HarmonyAutolinkingError } from '../../errors';
 import { assertSafeRnohPackageList } from '../../config/options';
 import { isPathInside, sanitizeOutput } from '../../utilities/values';
+import { terminateProcess } from '../../utilities/terminateProcess';
 import { createManifest } from '../manifest/generate';
 import { canonicalizeOhpmManifest } from '../persistence/canonicalize';
 import { resolveRnohMetadata } from './packageMetadata';
@@ -36,14 +37,15 @@ function spawnBoundedAsync(executable, argv, options: Record<string, any> = {}) 
     let stdoutTruncated = false;
     let stderrTruncated = false;
     let timedOut = false;
-    let killTimer;
+    let escalation;
     // eslint-disable-next-line prefer-const
     let timeout;
     let settled = false;
+    let stopping: Promise<void> | undefined;
     let child;
 
     try {
-      child = childProcess.spawn(executable, argv, {
+      child = crossSpawn(executable, argv, {
         cwd: options.cwd,
         env: options.env || process.env,
         shell: false,
@@ -64,28 +66,20 @@ function spawnBoundedAsync(executable, argv, options: Record<string, any> = {}) 
       stderr = appendBounded(stderr, chunk, outputLimit);
     });
 
-    child.on('error', (error) => {
+    const finish = async (code, signal, error?) => {
+      try {
+        await stopping;
+      } catch (cause) {
+        error = cause;
+      }
+
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
-      clearTimeout(killTimer);
-      reject(error);
-    });
+      clearTimeout(escalation);
 
-    timeout = setTimeout(() => {
-      timedOut = true;
-      child.kill('SIGTERM');
-      killTimer = setTimeout(() => child.kill('SIGKILL'), 1_000);
-      killTimer.unref?.();
-    }, timeoutMs);
-    timeout.unref?.();
-
-    child.on('close', (code, signal) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      clearTimeout(killTimer);
-      resolve({
+      if (error) reject(error);
+      else resolve({
         code,
         signal,
         timedOut,
@@ -94,6 +88,34 @@ function spawnBoundedAsync(executable, argv, options: Record<string, any> = {}) 
         stdoutTruncated,
         stderrTruncated,
       });
+    };
+
+    child.on('error', (error) => {
+      void finish(null, null, error);
+    });
+
+    timeout = setTimeout(() => {
+      timedOut = true;
+      stopping = Promise.resolve().then(() => terminateProcess(child, 'SIGTERM'));
+      if (process.platform === 'win32') {
+        void finish(null, 'SIGTERM');
+      } else {
+        stopping.catch((error) => {
+          void finish(null, null, error);
+        });
+        escalation = setTimeout(() => {
+          stopping = terminateProcess(child, 'SIGKILL');
+          stopping.catch((error) => {
+            void finish(null, null, error);
+          });
+        }, 1_000);
+        escalation.unref?.();
+      }
+    }, timeoutMs);
+    timeout.unref?.();
+
+    child.on('close', (code, signal) => {
+      void finish(code, signal);
     });
   });
 }
@@ -370,7 +392,7 @@ function patchOhpmManifest(artifact, descriptors, buildType, harmonyProjectPath)
 }
 
 async function linkRnohAsync(linkOptions) {
-  const executable = await resolveCliAsync({
+  const command = await resolveCliAsync({
     ...linkOptions,
     nodeModulesPath: linkOptions.commandNodeModulesPath || linkOptions.nodeModulesPath,
   });
@@ -384,12 +406,12 @@ async function linkRnohAsync(linkOptions) {
 
   let result;
   try {
-    result = await spawnBoundedAsync(executable, buildLinkCommandArgs({
+    result = await spawnBoundedAsync(command.executable, [...command.args, ...buildLinkCommandArgs({
       harmonyProjectPath: linkOptions.stageHarmonyProjectPath,
       nodeModulesPath: linkOptions.nodeModulesPath,
       include: linkOptions.include,
       exclude: linkOptions.exclude,
-    }), spawn);
+    })], spawn);
   } catch (cause) {
     throw new HarmonyAutolinkingError('RNOH_LINK_FAILED', 'Unable to execute React Native link-harmony.', { cause, stage: 'rnoh-link' });
   }

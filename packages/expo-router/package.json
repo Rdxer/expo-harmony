@@ -30,17 +30,6 @@
     "@react-native-ohos/react-native-worklets": "1.0.0",
     "expo-router": "55.0.16"
   },
-  "peerDependenciesMeta": {
-    "@react-native-ohos/react-native-gesture-handler": {
-      "optional": true
-    },
-    "@react-native-ohos/react-native-reanimated": {
-      "optional": true
-    },
-    "@react-native-ohos/react-native-worklets": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@babel/core": "7.29.7",
     "@react-native-oh/react-native-harmony": "0.84.1",

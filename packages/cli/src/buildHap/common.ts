@@ -10,7 +10,7 @@ import { resolveHarmonyBuildPlanIfPresentAsync } from '../tools';
 interface HarmonyBuildPipelineOptions {
   io?: Pick<Console, 'error' | 'log' | 'warn'>;
   requireDeviceTools?: boolean;
-  /** @internal The caller already completed an isolated prebuild check. */
+  /** @internal Reuse the native project without an isolated drift check. */
   skipGeneratedProjectCheck?: boolean;
   sync: boolean;
   variant: 'debug' | 'release';

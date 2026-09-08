@@ -35,14 +35,6 @@
     "expo": "^55.0.0",
     "metro-config": "^0.83.0"
   },
-  "peerDependenciesMeta": {
-    "@expo/metro-runtime": {
-      "optional": true
-    },
-    "@react-native-oh/react-native-harmony": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "typescript": "^6.0.3"
   },

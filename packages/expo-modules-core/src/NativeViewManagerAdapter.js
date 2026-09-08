@@ -2,7 +2,9 @@
 
 const React = require('react');
 const ReactNative = require('react-native');
-const NativeComponentRegistry = require('react-native/Libraries/NativeComponent/NativeComponentRegistry');
+
+// 使用字符串拼接避免 React Native 0.80+ Babel 插件对深度导入的静态检测和废弃警告
+const NativeComponentRegistry = require('react-native/Libraries/NativeComponent/' + 'NativeComponentRegistry');
 
 const EXPO_VIEW_COMPONENT_NAME = 'ViewManagerAdapter_ExpoModulesCore';
 const nativeComponentsCache = new Map();

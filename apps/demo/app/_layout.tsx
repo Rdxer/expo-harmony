@@ -47,7 +47,8 @@ export default function RootLayout() {
               statusBarStyle: 'dark',
             }}
           >
-            <Stack.Screen name="index" options={{ headerShown: false }} />
+            {/* 根屏幕：禁用返回手势和返回按钮，防止在首页触发原生返回操作导致 POP 报错 */}
+            <Stack.Screen name="index" options={{ gestureEnabled: false, headerBackVisible: false, headerShown: false }} />
             <Stack.Screen name="module/[module]" options={{ title: '模块' }} />
             <Stack.Screen name="router-fixture/[value]" options={{ title: '路由测试' }} />
           </Stack>

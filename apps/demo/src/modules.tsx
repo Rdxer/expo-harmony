@@ -1643,8 +1643,17 @@ function BleDemo() {
       connectedIdRef.current = connectedId;
       const deviceLabel = device.name || device.id;
       Alert.alert('连接成功', `已连接 ${deviceLabel}`);
-      // 连接成功后自动探索服务
-      exploreServices(connectedId);
+      // 先探索服务（确保 GATT 数据库就绪）
+      await exploreServices(connectedId);
+      // 探索完成后请求 MTU 512（仅在 Android/HarmonyOS 上有效，iOS 自动管理）
+      if (Platform.OS !== 'ios') {
+        try {
+          const negotiatedMtu = mgr.requestMTU(connectedId, 512);
+          setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] MTU: 请求 512, 协商结果 ${negotiatedMtu}`]);
+        } catch (mtuError) {
+          setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] MTU 请求失败: ${mtuError}`]);
+        }
+      }
       return `已连接 ${deviceLabel}`;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1671,7 +1680,7 @@ function BleDemo() {
   const exploreServices = async (deviceId: string) => {
     const mgr = manager.current;
     if (!mgr) return;
-    exploreAction.run(async () => {
+    return exploreAction.run(async () => {
       await mgr.discoverServices(deviceId);
       const serviceIds = await mgr.getServices(deviceId);
       const result: { id: string; chars: string[] }[] = [];

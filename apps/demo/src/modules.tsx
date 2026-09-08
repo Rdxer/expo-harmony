@@ -1869,7 +1869,7 @@ function BleDemo() {
                   const charShort = shortUUID(charId);
                   const result = charResults[key];
                   const notifyResult = charResults[`notify:${key}`];
-                  const writeInput = writeHexInputs[key] || '1A 01 A1 23 45 67';
+                  const writeInput = writeHexInputs[key] ?? '';
                   return (
                     <View key={charId} style={{ paddingLeft: 12, paddingVertical: 6, borderLeftWidth: 1, borderLeftColor: palette.line, marginLeft: 4, marginTop: 4, gap: 4 }}>
                       <Text style={{ color: palette.text, fontSize: 12, fontFamily: 'monospace' }}>{charShort}</Text>

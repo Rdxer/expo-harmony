@@ -25,7 +25,7 @@ import * as SystemUI from 'expo-system-ui';
 import * as TaskManager from 'expo-task-manager';
 import { fetch as expoFetch } from 'expo/fetch';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, PermissionsAndroid, Platform, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, PermissionsAndroid, Platform, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { BleNitro, BleNitroManager, type BLEDevice } from 'react-native-ble-nitro';
 
 import { antDesignFontAsset, DYNAMIC_FONT_FAMILY } from './fixtures';
@@ -1480,6 +1480,43 @@ function BackgroundTaskDemo() {
   );
 }
 
+// ---- BLE 工具函数 ----
+
+/** 将 128 位 UUID 转为短格式 */
+function shortUUID(uuid: string): string {
+  const bleBase = '-0000-1000-8000-00805f9b34fb';
+  if (uuid.endsWith(bleBase)) return `0x${uuid.replace(bleBase, '')}`;
+  if (uuid.length === 36) return uuid.split('-').pop() || uuid;
+  if (uuid.length === 4 || uuid.length === 6) return `0x${uuid}`;
+  return uuid;
+}
+
+/** 将字节数组转为十六进制字符串 */
+function bytesToHex(data: number[]): string {
+  return data.map(b => b.toString(16).padStart(2, '0')).join(' ');
+}
+
+/** 将字节数组转为 ASCII 字符串（可打印字符） */
+function bytesToAscii(data: number[]): string {
+  return data.map(b => (b >= 32 && b <= 126 ? String.fromCharCode(b) : '.')).join('');
+}
+
+/** 解析十六进制字符串为字节数组 */
+function hexToBytes(hex: string): number[] {
+  const clean = hex.replace(/\s+/g, '').replace(/^0x/i, '').replace(/[^0-9a-fA-F]/g, '');
+  if (clean.length % 2 !== 0) throw new Error('十六进制长度必须为偶数');
+  const result: number[] = [];
+  for (let i = 0; i < clean.length; i += 2) result.push(parseInt(clean.substring(i, i + 2), 16));
+  return result;
+}
+
+/** 格式化字节数组为可读字符串 */
+function formatByteData(data: number[]): { hex: string; ascii: string } {
+  return { hex: bytesToHex(data), ascii: bytesToAscii(data) };
+}
+
+// ---- BLE 演示组件 ----
+
 function BleDemo() {
   const manager = useRef<BleNitroManager | null>(null);
   const [bleState, setBleState] = useState<string>('检查中');
@@ -1488,7 +1525,29 @@ function BleDemo() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [requestingPerm, setRequestingPerm] = useState(false);
   const [connectedDeviceId, setConnectedDeviceId] = useState<string | null>(null);
+  const [hasNameOnly, setHasNameOnly] = useState(true);
+
+  // 服务和特征探索
+  const [services, setServices] = useState<{ id: string; chars: string[] }[]>([]);
+  const [expandedServices, setExpandedServices] = useState<Set<string>>(new Set());
+  const [subscribedChars, setSubscribedChars] = useState<Set<string>>(new Set());
+  const [notificationLog, setNotificationLog] = useState<string[]>([]);
+  const [charResults, setCharResults] = useState<Record<string, string>>({});
+
+  // 写操作输入
+  const [writeHexInputs, setWriteHexInputs] = useState<Record<string, string>>({});
+  const [writeWithResponse, setWriteWithResponse] = useState(true);
+
+  // 独立的操作状态跟踪
   const action = useAsyncResult();
+  const exploreAction = useAsyncResult();
+  const readAction = useAsyncResult();
+  const writeAction = useAsyncResult();
+
+  // 保存当前连接的设备 ID，供 cleanup 使用（ref 避免闭包过期）
+  const connectedIdRef = useRef<string | null>(null);
+  // 订阅回调引用，避免组件重新渲染时丢失订阅
+  const subRefs = useRef<Map<string, { remove: () => void }>>(new Map());
 
   useEffect(() => {
     const mgr = BleNitro.instance();
@@ -1498,6 +1557,13 @@ function BleDemo() {
     }, true);
     return () => {
       sub.remove();
+      // 离开页面时：清理订阅 → 断开已连接设备 → 停止扫描
+      subRefs.current.forEach(s => s.remove());
+      subRefs.current.clear();
+      const deviceId = connectedIdRef.current;
+      if (deviceId) {
+        mgr.disconnect(deviceId).catch(() => {});
+      }
       mgr.stopScan();
     };
   }, []);
@@ -1517,11 +1583,8 @@ function BleDemo() {
         r => r === PermissionsAndroid.RESULTS.GRANTED,
       );
       if (allGranted) {
-        // 权限已授予，重新检查 BLE 状态
         const mgr = manager.current;
-        if (mgr) {
-          setBleState(mgr.state());
-        }
+        if (mgr) setBleState(mgr.state());
       }
       return allGranted;
     } finally {
@@ -1542,9 +1605,7 @@ function BleDemo() {
     mgr.startScan({}, (device) => {
       setDevices(prev => {
         const exists = prev.find(d => d.id === device.id);
-        if (exists) {
-          return prev.map(d => d.id === device.id ? device : d);
-        }
+        if (exists) return prev.map(d => d.id === device.id ? device : d);
         return [...prev, device];
       });
     }, (error) => {
@@ -1565,8 +1626,11 @@ function BleDemo() {
     const connectWithTimeout = (deviceId: string, timeoutMs = 15000) =>
       Promise.race([
         mgr.connect(deviceId, (_deviceId, _interrupted, _error) => {
-          // 设备断开连接（用户主动断开或设备自动断开）
           setConnectedDeviceId(null);
+          connectedIdRef.current = null;
+          setServices([]);
+          setExpandedServices(new Set());
+          setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 连接已断开${_interrupted ? '（异常断开）' : ''}`]);
           Alert.alert('连接已断开', _interrupted ? '设备异常断开' : '已断开连接');
         }),
         new Promise<never>((_, reject) =>
@@ -1576,17 +1640,12 @@ function BleDemo() {
     try {
       const connectedId = await connectWithTimeout(device.id);
       setConnectedDeviceId(connectedId);
+      connectedIdRef.current = connectedId;
       const deviceLabel = device.name || device.id;
       Alert.alert('连接成功', `已连接 ${deviceLabel}`);
-      await mgr.discoverServices(connectedId);
-      const services = await mgr.getServices(connectedId);
-      return JSON.stringify({
-        id: connectedId,
-        name: device.name || '未命名',
-        rssi: device.rssi,
-        servicesCount: services.length,
-        serviceUUIDs: services,
-      }, null, 2);
+      // 连接成功后自动探索服务
+      exploreServices(connectedId);
+      return `已连接 ${deviceLabel}`;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`连接失败: ${msg}`);
@@ -1596,10 +1655,94 @@ function BleDemo() {
   const disconnectDevice = () => action.run(async () => {
     const mgr = manager.current;
     if (!mgr || !connectedDeviceId) throw new Error('未连接任何设备');
+    // 清理所有订阅
+    subRefs.current.forEach(s => s.remove());
+    subRefs.current.clear();
+    setSubscribedChars(new Set());
     await mgr.disconnect(connectedDeviceId);
     setConnectedDeviceId(null);
+    connectedIdRef.current = null;
+    setServices([]);
+    setExpandedServices(new Set());
     return `已断开 ${connectedDeviceId}`;
   });
+
+  // 探索服务和特征
+  const exploreServices = async (deviceId: string) => {
+    const mgr = manager.current;
+    if (!mgr) return;
+    exploreAction.run(async () => {
+      await mgr.discoverServices(deviceId);
+      const serviceIds = await mgr.getServices(deviceId);
+      const result: { id: string; chars: string[] }[] = [];
+      for (const sid of serviceIds) {
+        const charIds = mgr.getCharacteristics(deviceId, sid);
+        result.push({ id: sid, chars: charIds });
+      }
+      setServices(result);
+      // 默认折叠所有服务，点击展开
+      return `发现 ${result.length} 个服务，共 ${result.reduce((sum, s) => sum + s.chars.length, 0)} 个特征`;
+    });
+  };
+
+  // 读取特征值
+  const readChar = (serviceId: string, charId: string) => readAction.run(async () => {
+    const mgr = manager.current;
+    if (!mgr || !connectedDeviceId) throw new Error('未连接');
+    const data = await mgr.readCharacteristic(connectedDeviceId, serviceId, charId);
+    const { hex, ascii } = formatByteData(data);
+    const summary = `[${shortUUID(charId)}] HEX: ${hex} | ASCII: ${ascii}`;
+    setCharResults(prev => ({ ...prev, [`${serviceId}:${charId}`]: summary }));
+    return summary;
+  });
+
+  // 写入特征值
+  const writeChar = (serviceId: string, charId: string) => writeAction.run(async () => {
+    const mgr = manager.current;
+    if (!mgr || !connectedDeviceId) throw new Error('未连接');
+    const inputKey = `${serviceId}:${charId}`;
+    const hexStr = writeHexInputs[inputKey] || '';
+    const bytes = hexToBytes(hexStr);
+    if (bytes.length === 0) throw new Error('请输入要写入的十六进制数据');
+    await mgr.writeCharacteristic(connectedDeviceId, serviceId, charId, bytes, writeWithResponse);
+    const result = `已写入 ${bytes.length} 字节: ${bytesToHex(bytes)}`;
+    setCharResults(prev => ({ ...prev, [inputKey]: result }));
+    return result;
+  });
+
+  // 订阅/取消订阅特征值通知
+  const toggleSubscribe = async (serviceId: string, charId: string) => {
+    const mgr = manager.current;
+    if (!mgr || !connectedDeviceId) return;
+    const key = `${serviceId}:${charId}`;
+    if (subscribedChars.has(key)) {
+      // 取消订阅
+      try {
+        await mgr.unsubscribeFromCharacteristic(connectedDeviceId, serviceId, charId);
+        const sub = subRefs.current.get(key);
+        if (sub) { sub.remove(); subRefs.current.delete(key); }
+        setSubscribedChars(prev => { const next = new Set(prev); next.delete(key); return next; });
+        setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 取消订阅 ${shortUUID(charId)}`]);
+      } catch (e) {
+        Alert.alert('取消订阅失败', String(e));
+      }
+    } else {
+      // 订阅
+      try {
+        const sub = await mgr.subscribeToCharacteristic(connectedDeviceId, serviceId, charId, (_charId, data) => {
+          const { hex, ascii } = formatByteData(data);
+          const log = `[${new Date().toLocaleTimeString()}] ${shortUUID(charId)} → HEX: ${hex} | ASCII: ${ascii}`;
+          setNotificationLog(prev => [log, ...prev].slice(0, 100));
+          setCharResults(prev => ({ ...prev, [`notify:${key}`]: log }));
+        });
+        subRefs.current.set(key, sub);
+        setSubscribedChars(prev => { const next = new Set(prev); next.add(key); return next; });
+        setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 已订阅 ${shortUUID(charId)}`]);
+      } catch (e) {
+        Alert.alert('订阅失败', `特征 ${shortUUID(charId)} 可能不支持通知/指示\n${String(e)}`);
+      }
+    }
+  };
 
   return (
     <>
@@ -1655,15 +1798,22 @@ function BleDemo() {
           )}
         </ActionRow>
         {scanError ? <Note>扫描错误: {scanError}</Note> : null}
+        <ActionRow>
+          <ActionButton
+            label={hasNameOnly ? '仅显示有名称的设备' : '显示所有设备'}
+            onPress={() => setHasNameOnly(v => !v)}
+            tone="secondary"
+          />
+        </ActionRow>
       </Panel>
 
       <Panel
         eyebrow="发现设备"
-        title={`${devices.length} 个设备`}
+        title={`${(hasNameOnly ? devices.filter(d => d.name) : devices).length} / ${devices.length} 个设备`}
       >
         {devices.length === 0
           ? <Note>点击「扫描设备」开始搜索附近的 BLE 设备。需确保蓝牙已开启。</Note>
-          : devices.slice(0, 20).map(device => {
+          : (hasNameOnly ? devices.filter(d => d.name) : devices).slice(0, 20).map(device => {
               const isThisConnected = device.id === connectedDeviceId;
               return (
                 <View key={device.id} style={styles.bleDeviceRow}>
@@ -1696,6 +1846,84 @@ function BleDemo() {
             })}
       </Panel>
 
+      {/* 已连接设备的服务和特征探索 */}
+      {connectedDeviceId && services.length > 0 && (
+        <Panel eyebrow="设备服务" title={`${services.length} 个服务`}>
+          {services.map(svc => {
+            const isExpanded = expandedServices.has(svc.id);
+            const svcShort = shortUUID(svc.id);
+            return (
+              <View key={svc.id} style={{ marginBottom: 8 }}>
+                <ActionButton
+                  label={`${isExpanded ? '▼' : '▶'} ${svcShort} (${svc.chars.length} 个特征)`}
+                  onPress={() => {
+                    const next = new Set(expandedServices);
+                    if (isExpanded) next.delete(svc.id); else next.add(svc.id);
+                    setExpandedServices(next);
+                  }}
+                  tone="secondary"
+                />
+                {isExpanded && svc.chars.map(charId => {
+                  const key = `${svc.id}:${charId}`;
+                  const isSubscribed = subscribedChars.has(key);
+                  const charShort = shortUUID(charId);
+                  const result = charResults[key];
+                  const notifyResult = charResults[`notify:${key}`];
+                  const writeInput = writeHexInputs[key] || '1A 01 A1 23 45 67';
+                  return (
+                    <View key={charId} style={{ paddingLeft: 12, paddingVertical: 6, borderLeftWidth: 1, borderLeftColor: palette.line, marginLeft: 4, marginTop: 4, gap: 4 }}>
+                      <Text style={{ color: palette.text, fontSize: 12, fontFamily: 'monospace' }}>{charShort}</Text>
+                      <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+                        <ActionButton label="读取" onPress={() => void readChar(svc.id, charId)} tone="secondary" />
+                        <ActionButton label="写入" onPress={() => void writeChar(svc.id, charId)} tone="secondary" />
+                        <ActionButton label={isSubscribed ? '取消订阅' : '订阅'} onPress={() => void toggleSubscribe(svc.id, charId)} tone={isSubscribed ? 'danger' : 'primary'} />
+                      </View>
+                      <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                        <TextInput
+                          placeholder="十六进制，如 01 02 AB"
+                          placeholderTextColor={palette.faint}
+                          value={writeInput}
+                          onChangeText={text => setWriteHexInputs(prev => ({ ...prev, [key]: text }))}
+                          style={{ flex: 1, backgroundColor: palette.canvas, color: palette.text, fontFamily: 'monospace', fontSize: 11, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}
+                        />
+                        <ActionButton label={writeWithResponse ? '有响应' : '无响应'} onPress={() => setWriteWithResponse(v => !v)} tone="secondary" />
+                      </View>
+                      {result ? <Text style={{ color: palette.muted, fontFamily: 'monospace', fontSize: 10, lineHeight: 14 }}>{result}</Text> : null}
+                      {notifyResult ? <Text style={{ color: palette.signal, fontFamily: 'monospace', fontSize: 10, lineHeight: 14 }}>{notifyResult}</Text> : null}
+                    </View>
+                  );
+                })}
+              </View>
+            );
+          })}
+          <ActionRow>
+            <ActionButton
+              label="重新探索服务"
+              onPress={() => connectedDeviceId && void exploreServices(connectedDeviceId)}
+              tone="secondary"
+            />
+          </ActionRow>
+        </Panel>
+      )}
+
+      {/* 通知日志 */}
+      {notificationLog.length > 0 && (
+        <Panel eyebrow="通知日志" title={`${notificationLog.length} 条`}>
+          <View style={{ maxHeight: 200, overflow: 'hidden' }}>
+            {notificationLog.slice(0, 20).map((log, i) => (
+              <Text key={i} style={{ color: palette.muted, fontFamily: 'monospace', fontSize: 10, lineHeight: 14 }}>{log}</Text>
+            ))}
+          </View>
+          <ActionRow>
+            <ActionButton label="清空日志" onPress={() => setNotificationLog([])} tone="secondary" />
+          </ActionRow>
+        </Panel>
+      )}
+
+      {/* 操作结果面板 */}
+      {exploreAction.state.phase !== 'idle' && <ResultPanel state={exploreAction.state} />}
+      {readAction.state.phase !== 'idle' && <ResultPanel state={readAction.state} />}
+      {writeAction.state.phase !== 'idle' && <ResultPanel state={writeAction.state} />}
       <ResultPanel state={action.state} />
     </>
   );

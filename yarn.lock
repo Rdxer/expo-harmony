@@ -1471,6 +1471,7 @@ __metadata:
     expo-camera: "npm:55.0.19"
     expo-constants: "npm:55.0.17"
     expo-crypto: "npm:55.0.15"
+    expo-dev-client: "npm:~55.0.40"
     expo-file-system: "npm:55.0.24"
     expo-font: "npm:55.0.8"
     expo-haptics: "npm:55.0.14"
@@ -2697,7 +2698,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@expo/schema-utils@npm:^55.0.4":
+"@expo/schema-utils@npm:^55.0.4, @expo/schema-utils@npm:^55.0.5":
   version: 55.0.5
   resolution: "@expo/schema-utils@npm:55.0.5"
   checksum: 10c0/0154469eb5d5d70def3892197c8d8c2d9da1c170a12c60ede623ee9bd22a733a5c4733b70979d5732e0138317b18ff133ccde155bbbf44ffdee55e5ced7d331f
@@ -7070,6 +7071,54 @@ __metadata:
   languageName: node
   linkType: hard
 
+"expo-dev-client@npm:~55.0.40":
+  version: 55.0.40
+  resolution: "expo-dev-client@npm:55.0.40"
+  dependencies:
+    expo-dev-launcher: "npm:55.0.41"
+    expo-dev-menu: "npm:55.0.34"
+    expo-dev-menu-interface: "npm:55.0.2"
+    expo-manifests: "npm:~55.0.21"
+    expo-updates-interface: "npm:~55.1.6"
+  peerDependencies:
+    expo: "*"
+  checksum: 10c0/61b3eaf6c32fb0600a34e01f3bf72b1cf315aa7b0721aee69a0b9c0268580cde510207c9216fde34bc8f24ff93efa3317aa084a2b691998e62ee7e6858c2039a
+  languageName: node
+  linkType: hard
+
+"expo-dev-launcher@npm:55.0.41":
+  version: 55.0.41
+  resolution: "expo-dev-launcher@npm:55.0.41"
+  dependencies:
+    "@expo/schema-utils": "npm:^55.0.5"
+    expo-dev-menu: "npm:55.0.34"
+    expo-manifests: "npm:~55.0.21"
+  peerDependencies:
+    expo: "*"
+  checksum: 10c0/fcd251e4f0a6ee4a9e66a3a72ef7636a719dca6ba65ca09beb565ce7188cd9650a74d244c15e10bc8ea1a065e3331641270215b6e9e89331a209b8d7b9d43fbd
+  languageName: node
+  linkType: hard
+
+"expo-dev-menu-interface@npm:55.0.2":
+  version: 55.0.2
+  resolution: "expo-dev-menu-interface@npm:55.0.2"
+  peerDependencies:
+    expo: "*"
+  checksum: 10c0/e13f4f235df2d3d9e35026553a3b49350ea08a7a1285634f15f8e957a39e3cf522f1f6a81a89396c66bfec452e664094e1711cf516db077da2d12ae844e3cabe
+  languageName: node
+  linkType: hard
+
+"expo-dev-menu@npm:55.0.34":
+  version: 55.0.34
+  resolution: "expo-dev-menu@npm:55.0.34"
+  dependencies:
+    expo-dev-menu-interface: "npm:55.0.2"
+  peerDependencies:
+    expo: "*"
+  checksum: 10c0/d96ae780ca8f73ec350307ba6f365e516c9ff8179b88a2b73bafb1a8b052a15c0b8be8be73bc4bbda5eacb852b9ecc1390a4e6f3c0e9446f19a17f4eea007bcb
+  languageName: node
+  linkType: hard
+
 "expo-file-system@npm:55.0.24":
   version: 55.0.24
   resolution: "expo-file-system@npm:55.0.24"
@@ -7154,6 +7203,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"expo-json-utils@npm:~55.0.2":
+  version: 55.0.2
+  resolution: "expo-json-utils@npm:55.0.2"
+  checksum: 10c0/0a20a9a0cd1d66691858cc447abc021d13ac5a75be30cdda10a642b7aa03fbf1ffac83c84702bda77bb29fc43a8063582620434725ce32a7c8555a154066c24c
+  languageName: node
+  linkType: hard
+
 "expo-keep-awake@npm:55.0.8, expo-keep-awake@npm:~55.0.8":
   version: 55.0.8
   resolution: "expo-keep-awake@npm:55.0.8"
@@ -7185,6 +7241,17 @@ __metadata:
     react: "*"
     react-native: "*"
   checksum: 10c0/918ded8cac631019f3d223c1883ce8505fb2a3c1db072d47e532a85197e1bca5bf45fb49192dfe40bdfc765152f42b26871463b9218d69fdf9c07cced2354535
+  languageName: node
+  linkType: hard
+
+"expo-manifests@npm:~55.0.21":
+  version: 55.0.21
+  resolution: "expo-manifests@npm:55.0.21"
+  dependencies:
+    expo-json-utils: "npm:~55.0.2"
+  peerDependencies:
+    expo: "*"
+  checksum: 10c0/8c7e240dcf813a5d667630a1ffeb9f7e195437073efab110bc260e29c1ceabe8728773400bf2b98dab2b4b96a0adc3413deaf74c2bfd8470945be00a5d5449e2
   languageName: node
   linkType: hard
 
@@ -11429,11 +11496,11 @@ __metadata:
 
 "react-native-ble-nitro@file:../../../react-native-ble-nitro::locator=%40expo-harmony%2Fdemo%40workspace%3Aapps%2Fdemo":
   version: 1.15.1
-  resolution: "react-native-ble-nitro@file:../../../react-native-ble-nitro#../../../react-native-ble-nitro::hash=de054d&locator=%40expo-harmony%2Fdemo%40workspace%3Aapps%2Fdemo"
+  resolution: "react-native-ble-nitro@file:../../../react-native-ble-nitro#../../../react-native-ble-nitro::hash=272827&locator=%40expo-harmony%2Fdemo%40workspace%3Aapps%2Fdemo"
   peerDependencies:
     react-native: ">=0.76.0"
     react-native-nitro-modules: ">=0.35.0"
-  checksum: 10c0/557c7a08f2b3ecbd414852c2f3b8d33ed85948d7fa1b05a553ff53f98a8d621891c46e5810645b48f25c6855fe4803d4051f38b6d03129b9d35d7a60429cba3d
+  checksum: 10c0/a9cccb34a241f288ea4363536c688b51930ca72e1c395f2e768a5fa13d9f3cc44a3d95c4de1517f1066a697663ad51e63b0328282bdda65007ca40f132020e18
   languageName: node
   linkType: hard
 

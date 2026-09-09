@@ -51,6 +51,7 @@ adb install -r "$APK"
 
 # ---------- 3. 启动 ----------
 echo "🚀 启动应用 $PACKAGE_NAME ..."
+adb reverse tcp:8081 tcp:8081       # 真机需反向转发才能访问电脑上的 Metro
 adb logcat -c                      # 清空旧日志
 adb shell am start -n "$PACKAGE_NAME/$ACTIVITY_NAME"
 

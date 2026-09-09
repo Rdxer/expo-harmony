@@ -55,6 +55,7 @@ hdc install -r "$HAP"
 
 # ---------- 3. 启动 ----------
 echo "🚀 启动应用 $BUNDLE_NAME ..."
+hdc rport tcp:8081 tcp:8081   # 真机需反向转发才能访问电脑上的 Metro
 hdc shell hilog -r            # 清空旧日志，避免混入历史输出
 hdc shell aa start -a "$ABILITY_NAME" -b "$BUNDLE_NAME"
 

@@ -1522,6 +1522,13 @@ function formatByteData(data: number[]): { hex: string; ascii: string } {
   return { hex: bytesToHex(data), ascii: bytesToAscii(data) };
 }
 
+/** 判断设备是否有真实名称：iOS 对无名设备回填 "Unknown"/"Unknown Device"，须视为无名 */
+function hasDeviceName(d: BLEDevice): boolean {
+  const n = (d.name || '').trim();
+  if (!n) return false;
+  return !/^unknown(\s+device)?$/i.test(n);
+}
+
 // ---- BLE 演示组件 ----
 
 function BleDemo() {
@@ -1556,7 +1563,7 @@ function BleDemo() {
 
   // 保存当前连接的设备 ID，供 cleanup 使用（ref 避免闭包过期）
   const connectedIdRef = useRef<string | null>(null);
-  const mtuRef = useRef<number>(23); // 协商后的 MTU，默认 23
+  const mtuRef = useRef<number>(20); // 有效写入荷载（MTU - 3），默认 MTU 23 → 20 字节
   // 订阅回调引用，避免组件重新渲染时丢失订阅
   const subRefs = useRef<Map<string, AsyncSubscription>>(new Map());
 
@@ -1702,13 +1709,14 @@ function BleDemo() {
       Alert.alert('连接成功', `已连接 ${deviceLabel}`);
       // 先探索服务（确保 GATT 数据库就绪）
       await exploreServices(connectedId);
-      // 协商 MTU：获取实际协商值，用于后续写入分包
+      // 协商 MTU：requestMTU 返回有效写入荷载（协商 MTU - 3，三端一致），
+      // 用于后续写入分包
       try {
-        const negotiatedMtu = await (mgr.requestMTU(connectedId, 517) as unknown as Promise<number>);
-        mtuRef.current = negotiatedMtu;
-        setNotificationLog(prev => [...prev, `[${nowTime()}] MTU 协商完成: ${negotiatedMtu}`]);
+        const negotiatedPayload = await (mgr.requestMTU(connectedId, 517) as unknown as Promise<number>);
+        mtuRef.current = negotiatedPayload;
+        setNotificationLog(prev => [...prev, `[${nowTime()}] MTU 协商完成: 有效荷载 ${negotiatedPayload} 字节`]);
       } catch {
-        setNotificationLog(prev => [...prev, `[${nowTime()}] MTU 协商失败，使用默认值 23`]);
+        setNotificationLog(prev => [...prev, `[${nowTime()}] MTU 协商失败，使用默认有效荷载 20 字节（MTU 23）`]);
       }
       return `已连接 ${deviceLabel}`;
     } catch (err) {
@@ -1741,13 +1749,13 @@ function BleDemo() {
     const mgr = manager.current;
     if (!mgr) return;
     return exploreAction.run(async () => {
-      await mgr.discoverServices(deviceId);
-      const serviceIds = await mgr.getServices(deviceId);
-      const result: { id: string; chars: string[] }[] = [];
-      for (const sid of serviceIds) {
-        const charIds = mgr.getCharacteristics(deviceId, sid);
-        result.push({ id: sid, chars: charIds });
-      }
+      // 用 getServicesWithCharacteristics：一次性完成服务+特征全量发现
+      // （iOS 的 discoverServices 不会级联发现特征，必须走全量发现路径）
+      const services = await mgr.getServicesWithCharacteristics(deviceId);
+      const result: { id: string; chars: string[] }[] = services.map(s => ({
+        id: s.uuid,
+        chars: s.characteristics,
+      }));
       setServices(result);
       // 默认折叠所有服务，点击展开
       return `发现 ${result.length} 个服务，共 ${result.reduce((sum, s) => sum + s.chars.length, 0)} 个特征`;
@@ -1775,7 +1783,8 @@ function BleDemo() {
   ) => {
     const mgr = manager.current;
     if (!mgr) throw new Error('BLE 管理器未初始化');
-    const maxPayload = mtuRef.current - 3;
+    // requestMTU 返回的已是有效荷载（MTU - 3），无需再扣减 ATT 头
+    const maxPayload = mtuRef.current;
     if (!withResponse && data.length > maxPayload) {
       setNotificationLog(prev => [...prev, `[${nowTime()}] ⚠️ 无响应写入 ${data.length} 字节，MTU 载荷 ${maxPayload}，超出部分由应用层协议处理`]);
     }
@@ -1940,11 +1949,11 @@ function BleDemo() {
 
       <Panel
         eyebrow="发现设备"
-        title={`${(hasNameOnly ? devices.filter(d => d.name) : devices).length} / ${devices.length} 个设备`}
+        title={`${(hasNameOnly ? devices.filter(hasDeviceName) : devices).length} / ${devices.length} 个设备`}
       >
         {devices.length === 0
           ? <Note>点击「扫描设备」开始搜索附近的 BLE 设备。需确保蓝牙已开启。</Note>
-          : (hasNameOnly ? devices.filter(d => d.name) : devices).slice(0, 20).map(device => {
+          : (hasNameOnly ? devices.filter(hasDeviceName) : devices).slice(0, 20).map(device => {
               const isThisConnected = device.id === connectedDeviceId;
               return (
                 <View key={device.id} style={styles.bleDeviceRow}>

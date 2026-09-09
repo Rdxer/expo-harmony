@@ -149,6 +149,7 @@ async function runAsync(
     const result = await exportEmbedAsync(invocation.projectRoot, invocation.parsed);
 
     if (invocation.parsed.check) io.log('Harmony export bundle, assets, and source map are valid.');
+    else if (invocation.parsed.json) io.log(JSON.stringify(result));
     else io.log(`Exported Hermes bytecode ${result.bundle.path} with ${result.assets.length} asset file(s).`);
 
     return 0;

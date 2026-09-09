@@ -1501,6 +1501,13 @@ function bytesToAscii(data: number[]): string {
   return data.map(b => (b >= 32 && b <= 126 ? String.fromCharCode(b) : '.')).join('');
 }
 
+/** 格式化当前时间 HH:MM:SS（鸿蒙 Hermes 无 Intl，toLocaleTimeString 会抛 "dateformat not implemented"） */
+function nowTime(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 /** 解析十六进制字符串为字节数组 */
 function hexToBytes(hex: string): number[] {
   const clean = hex.replace(/\s+/g, '').replace(/^0x/i, '').replace(/[^0-9a-fA-F]/g, '');
@@ -1581,7 +1588,31 @@ function BleDemo() {
   }, []);
 
   // Android 12+ 需要运行时请求 BLE 相关权限
+  // HarmonyOS 也需要运行时请求 ohos.permission.ACCESS_BLUETOOTH
   const requestBlePermissions = async () => {
+    if ((Platform.OS as string) === 'harmony') {
+      setRequestingPerm(true);
+      try {
+        const mgr = manager.current;
+        if (!mgr) return false;
+        // HarmonyOS：requestBluetoothEnable 内部先检测/申请 ACCESS_BLUETOOTH + 模糊定位权限，
+        // 已授权时静默通过（不弹窗），未授权时弹系统授权框
+        const ok = await mgr.requestBluetoothEnable();
+        setBleState(mgr.state());
+        setNotificationLog(prev => [...prev, `[${nowTime()}] 蓝牙权限${ok ? '已授权 ✓' : '未授权 ✗（扫描无法发现设备）'}`]);
+        if (!ok) {
+          Alert.alert(
+            '蓝牙权限未授权',
+            '未授予蓝牙/模糊定位权限，扫描无法发现设备。可再次点击"检测/申请蓝牙权限"，或到系统设置 > 隐私 > 权限管理中手动授权。',
+          );
+        }
+        return ok;
+      } catch {
+        return false;
+      } finally {
+        setRequestingPerm(false);
+      }
+    }
     if (Platform.OS !== 'android') return;
     setRequestingPerm(true);
     try {
@@ -1607,6 +1638,9 @@ function BleDemo() {
   const isUnauthorized = bleState === 'Unauthorized';
   const isPoweredOff = bleState === 'PoweredOff';
   const isPoweredOn = bleState === 'PoweredOn';
+  // HarmonyOS 的 state() 只反映蓝牙开关，不反映权限状态（未授权时也显示 PoweredOn），
+  // 因此权限按钮需要常显，点击即"检测 + 按需申请"
+  const isHarmony = (Platform.OS as string) === 'harmony';
 
   const startScan = () => {
     setDevices([]);
@@ -1640,7 +1674,7 @@ function BleDemo() {
     // 避免 cleanup 中未完成的 onConnectionStateChange(STATE_DISCONNECTED)
     // 在新连接建立后误删 connectedDevices / deviceCallbacks
     if (mgr.isConnected(device.id)) {
-      setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 设备有残留连接，先断开清理...`]);
+      setNotificationLog(prev => [...prev, `[${nowTime()}] 设备有残留连接，先断开清理...`]);
       await mgr.disconnect(device.id);
       // 等待 native 的 onConnectionStateChange 回调完成清理
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -1653,7 +1687,7 @@ function BleDemo() {
           connectedIdRef.current = null;
           setServices([]);
           setExpandedServices(new Set());
-          setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 连接已断开${_interrupted ? '（异常断开）' : ''}`]);
+          setNotificationLog(prev => [...prev, `[${nowTime()}] 连接已断开${_interrupted ? '（异常断开）' : ''}`]);
           Alert.alert('连接已断开', _interrupted ? '设备异常断开' : '已断开连接');
         }),
         new Promise<never>((_, reject) =>
@@ -1672,9 +1706,9 @@ function BleDemo() {
       try {
         const negotiatedMtu = await (mgr.requestMTU(connectedId, 517) as unknown as Promise<number>);
         mtuRef.current = negotiatedMtu;
-        setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] MTU 协商完成: ${negotiatedMtu}`]);
+        setNotificationLog(prev => [...prev, `[${nowTime()}] MTU 协商完成: ${negotiatedMtu}`]);
       } catch {
-        setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] MTU 协商失败，使用默认值 23`]);
+        setNotificationLog(prev => [...prev, `[${nowTime()}] MTU 协商失败，使用默认值 23`]);
       }
       return `已连接 ${deviceLabel}`;
     } catch (err) {
@@ -1743,7 +1777,7 @@ function BleDemo() {
     if (!mgr) throw new Error('BLE 管理器未初始化');
     const maxPayload = mtuRef.current - 3;
     if (!withResponse && data.length > maxPayload) {
-      setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ⚠️ 无响应写入 ${data.length} 字节，MTU 载荷 ${maxPayload}，超出部分由应用层协议处理`]);
+      setNotificationLog(prev => [...prev, `[${nowTime()}] ⚠️ 无响应写入 ${data.length} 字节，MTU 载荷 ${maxPayload}，超出部分由应用层协议处理`]);
     }
     // 直接发送，不分包（分包属于应用层协议职责）
     await mgr.writeCharacteristic(deviceId, serviceId, charId, data, withResponse);
@@ -1813,18 +1847,18 @@ function BleDemo() {
           subRefs.current.delete(key);
         }
         setSubscribedChars(prev => { const next = new Set(prev); next.delete(key); return next; });
-        setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 取消订阅 ${shortUUID(charId)}`]);
+        setNotificationLog(prev => [...prev, `[${nowTime()}] 取消订阅 ${shortUUID(charId)}`]);
       } catch (e) {
         Alert.alert('取消订阅失败', String(e));
       }
     } else {
       // 订阅 - 加超时防止 Promise 挂起
-      setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 正在订阅 ${shortUUID(charId)}...`]);
+      setNotificationLog(prev => [...prev, `[${nowTime()}] 正在订阅 ${shortUUID(charId)}...`]);
       try {
         const sub = await Promise.race([
           mgr.subscribeToCharacteristic(connectedDeviceId, serviceId, charId, (_charId, data) => {
             const { hex, ascii } = formatByteData(data);
-            const log = `[${new Date().toLocaleTimeString()}] ${shortUUID(charId)} → HEX: ${hex} | ASCII: ${ascii}`;
+            const log = `[${nowTime()}] ${shortUUID(charId)} → HEX: ${hex} | ASCII: ${ascii}`;
             setNotificationLog(prev => [log, ...prev].slice(0, 100));
             setCharResults(prev => ({ ...prev, [`notify:${key}`]: log }));
           }),
@@ -1834,7 +1868,7 @@ function BleDemo() {
         ]);
         subRefs.current.set(key, sub);
         setSubscribedChars(prev => { const next = new Set(prev); next.add(key); return next; });
-        setNotificationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] 已订阅 ${shortUUID(charId)}`]);
+        setNotificationLog(prev => [...prev, `[${nowTime()}] 已订阅 ${shortUUID(charId)}`]);
       } catch (e) {
         Alert.alert('订阅失败', `特征 ${shortUUID(charId)} 可能不支持通知/指示\n${String(e)}`);
       }
@@ -1854,11 +1888,11 @@ function BleDemo() {
             value={<Tag tone="success">设备 {connectedDeviceId.slice(0, 17)}…</Tag>}
           />
         )}
-        {isUnauthorized && (
+        {(isUnauthorized || isHarmony) && (
           <ActionRow>
             <ActionButton
               disabled={requestingPerm}
-              label={requestingPerm ? '请求中...' : '请求蓝牙权限'}
+              label={requestingPerm ? '请求中...' : '检测/申请蓝牙权限'}
               onPress={() => void requestBlePermissions()}
             />
           </ActionRow>

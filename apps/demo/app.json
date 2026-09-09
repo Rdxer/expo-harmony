@@ -126,7 +126,14 @@
           "name": "ohos.permission.GET_NETWORK_INFO"
         },
         {
-          "name": "ohos.permission.ACCESS_BLUETOOTH"
+          "name": "ohos.permission.ACCESS_BLUETOOTH",
+          "reason": "$string:bluetooth_permission_reason",
+          "usedScene": {
+            "abilities": [
+              "EntryAbility"
+            ],
+            "when": "inuse"
+          }
         }
       ],
       "backgroundColor": "#F2F2F7",

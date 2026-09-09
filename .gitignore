@@ -44,3 +44,4 @@ apps/*/harmony/
 *.pkcs12
 *.profile
 *.provisionprofile
+packages/expo-application/harmony/screenshot/*.png

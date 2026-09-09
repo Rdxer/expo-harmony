@@ -1454,6 +1454,7 @@ __metadata:
     "@react-native-oh/react-native-harmony": "npm:0.84.1"
     "@react-native-oh/react-native-harmony-cli": "npm:0.84.1"
     "@react-native-ohos/react-native-gesture-handler": "npm:2.30.1"
+    "@react-native-ohos/react-native-nitro-modules": "npm:0.31.11-rc.1"
     "@react-native-ohos/react-native-reanimated": "npm:4.0.2-beta.1"
     "@react-native-ohos/react-native-worklets": "npm:1.0.0"
     "@types/node": "npm:18.19.0"
@@ -1492,7 +1493,7 @@ __metadata:
     react-dom: "npm:19.2.0"
     react-harmony: "npm:react@19.2.3"
     react-native: "npm:0.83.6"
-    react-native-ble-nitro: "https://github.com/Rdxer/react-native-ble-nitro.git"
+    react-native-ble-nitro: "file:../../../react-native-ble-nitro"
     react-native-gesture-handler: "npm:2.30.0"
     react-native-nitro-modules: "npm:0.35.10"
     react-native-reanimated: "npm:4.2.1"
@@ -4013,6 +4014,16 @@ __metadata:
     react-native: "*"
     react-native-gesture-handler: 2.30.0
   checksum: 10c0/6629b9a6a51f60e1beb5c8f70f2ae0cb22757ca20ddab73bb0364b5fe98b0b18b0daebded9c2151b8c916e72b6f07cd035485d5fcde7b0d29d9f6eb806a51c15
+  languageName: node
+  linkType: hard
+
+"@react-native-ohos/react-native-nitro-modules@npm:0.31.11-rc.1":
+  version: 0.31.11-rc.1
+  resolution: "@react-native-ohos/react-native-nitro-modules@npm:0.31.11-rc.1"
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+  checksum: 10c0/5d8ef2f6011311b6c8705a18e4d39b21a912eecf07540e2481a68b2e5227fadb88eaef95d54bf6bcc38600fad0f8ee1d6169561beb84e6ad3a9ef2446c835b22
   languageName: node
   linkType: hard
 
@@ -11416,13 +11427,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-native-ble-nitro@https://github.com/Rdxer/react-native-ble-nitro.git":
+"react-native-ble-nitro@file:../../../react-native-ble-nitro::locator=%40expo-harmony%2Fdemo%40workspace%3Aapps%2Fdemo":
   version: 1.15.1
-  resolution: "react-native-ble-nitro@https://github.com/Rdxer/react-native-ble-nitro.git#commit=95b9558634eb13046274aed01748985edb881d5c"
+  resolution: "react-native-ble-nitro@file:../../../react-native-ble-nitro#../../../react-native-ble-nitro::hash=de054d&locator=%40expo-harmony%2Fdemo%40workspace%3Aapps%2Fdemo"
   peerDependencies:
     react-native: ">=0.76.0"
     react-native-nitro-modules: ">=0.35.0"
-  checksum: 10c0/1883658565d3b76867449a8debcc2b5bc5fcd70d99342f1376bf1d0fbcbabc6a24b7cfccb423a04a81995e199b62c657f1bf627541b97d0fa875e9a640ff802e
+  checksum: 10c0/557c7a08f2b3ecbd414852c2f3b8d33ed85948d7fa1b05a553ff53f98a8d621891c46e5810645b48f25c6855fe4803d4051f38b6d03129b9d35d7a60429cba3d
   languageName: node
   linkType: hard
 

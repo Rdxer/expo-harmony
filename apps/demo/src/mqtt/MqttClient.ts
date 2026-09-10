@@ -15,6 +15,15 @@
 
 export type MqttQos = 0 | 1 | 2;
 
+/** 遗嘱消息（Last Will）：客户端异常断开（非 DISCONNECT）时由 Broker 代为发布 */
+export type MqttWill = {
+  topic: string;
+  /** 遗嘱载荷，通常是一段终端状态描述文本，如 "offline" */
+  message: string;
+  qos?: MqttQos;
+  retain?: boolean;
+};
+
 export type MqttConnectOptions = {
   /** ws:// 或 wss:// 地址 */
   url: string;
@@ -24,6 +33,8 @@ export type MqttConnectOptions = {
   /** 心跳周期（秒），实际为网络保活与超时判定的依据；传 0 表示禁用保活 */
   keepalive?: number;
   cleanSession?: boolean;
+  /** 遗嘱消息：异常断线时由服务端代发（正常 disconnect() 不会触发） */
+  will?: MqttWill;
   /** 从发起连接到收到 CONNACK 的超时（毫秒） */
   connectTimeoutMs?: number;
 };
@@ -231,6 +242,15 @@ export class MqttClient {
     const connectTimeoutMs = options.connectTimeoutMs ?? CONNECT_TIMEOUT_MS_DEFAULT;
     const keepalive = options.keepalive ?? 30;
     const cleanSession = options.cleanSession ?? true;
+    const usernameFlag = options.username !== undefined && options.username !== '' ? 0x80 : 0x00;
+    const passwordFlag = options.username !== undefined && options.username !== '' && options.password !== undefined ? 0x40 : 0x00;
+    // 遗嘱：仅当主题与载荷均非空才置位（Will QoS/Retain 必须同时生效）
+    const will = options.will
+      && options.will.topic.trim().length > 0
+      && options.will.message.length > 0
+      ? options.will
+      : undefined;
+    const willQos = will ? (will.qos ?? 0) as MqttQos : 0;
 
     return new Promise<MqttConnAck>((resolveConnect, rejectConnect) => {
       let ws: RNWebSocket;
@@ -264,8 +284,9 @@ export class MqttClient {
         // 读取当前选项，构建并发送 CONNECT 报文
         const connectFlags
           = (cleanSession ? 0x02 : 0x00)
-          | (options.username !== undefined && options.username !== '' ? 0x80 : 0x00)
-          | (options.username !== undefined && options.username !== '' && options.password !== undefined ? 0x40 : 0x00);
+          | (will ? 0x04 | (willQos << 3) | (will.retain ? 0x20 : 0x00) : 0x00)
+          | usernameFlag
+          | passwordFlag;
         const body: number[] = [
           0x00, 0x04, 0x4d, 0x51, 0x54, 0x54, // "MQTT"
           0x04, // MQTT 3.1.1
@@ -274,8 +295,12 @@ export class MqttClient {
           keepalive & 0xff,
         ];
         pushUtf8(body, clientId);
-        if (connectFlags & 0x80) pushUtf8(body, options.username!);
-        if (connectFlags & 0x40) pushUtf8(body, options.password!);
+        if (will) {
+          pushUtf8(body, will.topic.trim());
+          pushUtf8(body, will.message);
+        }
+        if (usernameFlag) pushUtf8(body, options.username!);
+        if (passwordFlag) pushUtf8(body, options.password!);
         this.sendFrame(PacketType.CONNECT << 4, body);
       };
 

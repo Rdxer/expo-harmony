@@ -67,6 +67,13 @@ export function MqttDemo() {
   const [errorText, setErrorText] = useState<string | null>(null);
   const [connAckText, setConnAckText] = useState<string | null>(null);
 
+  // ---- 遗嘱（Last Will）----
+  const [willEnabled, setWillEnabled] = useState(true);
+  const [willTopic, setWillTopic] = useState('expo/demo/status');
+  const [willMessage, setWillMessage] = useState('offline');
+  const [willQos, setWillQos] = useState<MqttQos>(0);
+  const [willRetain, setWillRetain] = useState(true);
+
   // ---- 订阅 ----
   const [subTopic, setSubTopic] = useState('expo/demo');
   const [subQos, setSubQos] = useState<MqttQos>(0);
@@ -154,6 +161,10 @@ export function MqttDemo() {
       password,
       url: url.trim(),
       username,
+      // 遗嘱仅在主题与载荷均非空时生效（客户端侧已过滤）
+      will: willEnabled && willTopic.trim().length > 0 && willMessage.length > 0
+        ? { message: willMessage, qos: willQos, retain: willRetain, topic: willTopic.trim() }
+        : undefined,
     }).then((ack) => {
       connectingRef.current = false;
       setConnAckText(
@@ -260,8 +271,49 @@ export function MqttDemo() {
         </ActionRow>
         {errorText ? <Text style={styles.errorText}>{errorText}</Text> : null}
         {connAckText ? <DataRow label="CONNACK" value={connAckText} /> : null}
+        <View style={styles.switchRow}>
+          <View style={styles.switchCopy}>
+            <Text style={styles.switchTitle}>遗嘱（Last Will）</Text>
+            <Text style={styles.switchCaption}>
+              {willEnabled
+                ? `已启用：异常断线时 Broker 向「${willTopic.trim() || '(空)'}」代发「${willMessage || '(空)'}」`
+                : '已关闭。开发中可先订阅 will 主题，再 kill 进程观察 Broker 代发。'}
+            </Text>
+          </View>
+          <Switch
+            onValueChange={setWillEnabled}
+            thumbColor={willEnabled ? palette.signal : palette.muted}
+            trackColor={{ false: palette.lineStrong, true: palette.signalSoft }}
+            value={willEnabled}
+          />
+        </View>
+        {willEnabled
+          ? (
+              <>
+                <Field label="遗嘱主题（Will Topic）" onChangeText={setWillTopic} placeholder="expo/demo/status" value={willTopic} />
+                <Field label="遗嘱消息（Will Message）" onChangeText={setWillMessage} placeholder="offline" value={willMessage} />
+                <View style={styles.methodRow}>
+                  <ActionButton label="QoS 0" onPress={() => setWillQos(0)} tone={willQos === 0 ? 'primary' : 'secondary'} />
+                  <ActionButton label="QoS 1" onPress={() => setWillQos(1)} tone={willQos === 1 ? 'primary' : 'secondary'} />
+                  <ActionButton label="QoS 2" onPress={() => setWillQos(2)} tone={willQos === 2 ? 'primary' : 'secondary'} />
+                </View>
+                <View style={styles.switchRow}>
+                  <View style={styles.switchCopy}>
+                    <Text style={styles.switchTitle}>Retain</Text>
+                    <Text style={styles.switchCaption}>遗嘱消息作为保留消息存储，新订阅者立即收到。</Text>
+                  </View>
+                  <Switch
+                    onValueChange={setWillRetain}
+                    thumbColor={willRetain ? palette.signal : palette.muted}
+                    trackColor={{ false: palette.lineStrong, true: palette.signalSoft }}
+                    value={willRetain}
+                  />
+                </View>
+              </>
+            )
+          : null}
         <Note>
-          连接超时 15 秒。基于 RN 内置 WebSocket 的自研 MQTT 3.1.1 客户端，三端（iOS / Android / HarmonyOS）零依赖。
+          遗嘱仅在客户端异常断开（网络中断、崩溃、心跳超时）时由 Broker 代发；点「断开」走的是 DISCONNECT 正常流程，不会触发遗嘱。
           连接成功后每空闲 30 秒发一次 PINGREQ，超过 2 个 keepalive 周期没收到数据判为心跳超时。
         </Note>
       </Panel>

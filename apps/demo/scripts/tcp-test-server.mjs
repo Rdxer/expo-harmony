@@ -14,6 +14,19 @@
  *   node scripts/tcp-test-server.mjs
  *   node scripts/tcp-test-server.mjs --port 9001 --mode split --chunk 2 --delay 30
  *   node scripts/tcp-test-server.mjs --frames length --mode sticky
+ * 
+ * cd scripts
+
+# 1 字节长度字段（默认配置：偏移 1、不含帧头） 
+node tcp-test-server.mjs --frames length
+
+# 4 字节小端长度字段
+node tcp-test-server.mjs --frames length4
+
+# 也可以组合其他模式，比如分片传输
+node tcp-test-server.mjs --frames length --mode split --chunk 3
+
+ * 
  */
 
 import net from 'node:net';

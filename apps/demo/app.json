@@ -82,6 +82,7 @@
         }
       ],
       "./plugins/withAudioFixture",
+      "./plugins/withAndroidToolchain",
       "@expo-harmony/prebuild-config",
       [
         "react-native-ble-nitro",

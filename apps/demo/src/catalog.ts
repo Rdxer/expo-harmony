@@ -38,6 +38,7 @@ export const MODULES = [
   { id: 'sharing', title: '分享', packageName: '@expo-harmony/expo-sharing', category: '设备与媒体', summary: '通过 Harmony 系统面板分享本地文件。' },
   { id: 'ble', title: '蓝牙 BLE', packageName: 'react-native-ble-nitro', category: '设备与媒体', summary: '扫描、连接、读写 BLE 设备特征值，覆盖 iOS / Android / HarmonyOS。' },
   { id: 'tcp', title: 'TCP 套接字', packageName: 'react-native-tcp-socket', category: '设备与媒体', summary: '通用 TCP 客户端传输层与可注入帧解析器，验证分包/粘包处理，覆盖 iOS / Android / HarmonyOS。' },
+  { id: 'mqtt', title: 'MQTT 实时连接', packageName: '自研 MQTT 3.1.1 (WebSocket)', category: '设备与媒体', summary: '基于 RN 内置 WebSocket 的 MQTT over WebSocket 客户端：连接认证、心跳保活、订阅/退订、发布（QoS 0/1、retain）与实时消息日志。' },
 
   { id: 'background-fetch', title: '后台拉取', packageName: '@expo-harmony/expo-background-fetch', category: '后台任务', summary: 'WorkScheduler 注册与 JavaScript 回调。' },
   { id: 'background-task', title: '后台任务', packageName: '@expo-harmony/expo-background-task', category: '后台任务', summary: '新一代后台任务与调试触发行为。' },

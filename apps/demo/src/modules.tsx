@@ -46,6 +46,7 @@ import {
 import type { ModuleId } from './catalog';
 import { ExpoModulesDemo } from './expoModules/ExpoModulesDemo';
 import { HapticsDemo } from './haptics';
+import { MqttDemo } from './mqttDemo';
 import { AdditionalModuleDemo } from './packageScreens';
 import { palette } from './theme';
 import { TcpDemo } from './tcpDemo';
@@ -2112,6 +2113,7 @@ export function ModuleDemo({ id }: { id: ModuleId }) {
     case 'sharing': return <SharingDemo />;
     case 'ble': return <BleDemo />;
     case 'tcp': return <TcpDemo />;
+    case 'mqtt': return <MqttDemo />;
     case 'network': return <NetworkDemo />;
     case 'camera': return <CameraDemo />;
     case 'battery': return <BatteryDemo />;

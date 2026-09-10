@@ -1456,6 +1456,7 @@ __metadata:
     "@react-native-ohos/react-native-gesture-handler": "npm:2.30.1"
     "@react-native-ohos/react-native-nitro-modules": "npm:0.31.11-rc.1"
     "@react-native-ohos/react-native-reanimated": "npm:4.0.2-beta.1"
+    "@react-native-ohos/react-native-tcp-socket": "npm:6.4.0-bate.1"
     "@react-native-ohos/react-native-worklets": "npm:1.0.0"
     "@types/node": "npm:18.19.0"
     "@types/react": "npm:19.2.2"
@@ -1500,6 +1501,7 @@ __metadata:
     react-native-reanimated: "npm:4.2.1"
     react-native-safe-area-context: "npm:5.6.2"
     react-native-screens: "npm:4.23.0"
+    react-native-tcp-socket: "npm:6.3.0"
     react-native-web: "npm:0.21.2"
     react-native-worklets: "npm:0.7.4"
     typescript: "npm:6.0.3"
@@ -4069,6 +4071,19 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@react-native-ohos/react-native-tcp-socket@npm:6.4.0-bate.1":
+  version: 6.4.0-bate.1
+  resolution: "@react-native-ohos/react-native-tcp-socket@npm:6.4.0-bate.1"
+  dependencies:
+    buffer: "npm:^5.4.3"
+    eventemitter3: "npm:^4.0.7"
+    react-native-tcp-socket: "npm:6.2.0"
+  peerDependencies:
+    react-native: ">=0.60.0"
+  checksum: 10c0/3502ba345040cd92d132e344bbe52d05ee6ac8e5c11cc0b81f336d4c8ccff2e6ce7cef5cc8ae4c9e33beddad13b18e6abc69b37230d6a43d2803b3af1b88b398
+  languageName: node
+  linkType: hard
+
 "@react-native-ohos/react-native-worklets@npm:1.0.0":
   version: 1.0.0
   resolution: "@react-native-ohos/react-native-worklets@npm:1.0.0"
@@ -5691,7 +5706,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"buffer@npm:^5.5.0":
+"buffer@npm:^5.4.3, buffer@npm:^5.5.0":
   version: 5.7.1
   resolution: "buffer@npm:5.7.1"
   dependencies:
@@ -6879,6 +6894,13 @@ __metadata:
   version: 5.0.1
   resolution: "event-target-shim@npm:5.0.1"
   checksum: 10c0/0255d9f936215fd206156fd4caa9e8d35e62075d720dc7d847e89b417e5e62cf1ce6c9b4e0a1633a9256de0efefaf9f8d26924b1f3c8620cffb9db78e7d3076b
+  languageName: node
+  linkType: hard
+
+"eventemitter3@npm:^4.0.7":
+  version: 4.0.7
+  resolution: "eventemitter3@npm:4.0.7"
+  checksum: 10c0/5f6d97cbcbac47be798e6355e3a7639a84ee1f7d9b199a07017f1d2f1e2fe236004d14fa5dfaeba661f94ea57805385e326236a6debbc7145c8877fbc0297c6b
   languageName: node
   linkType: hard
 
@@ -11496,11 +11518,11 @@ __metadata:
 
 "react-native-ble-nitro@file:../../../react-native-ble-nitro::locator=%40expo-harmony%2Fdemo%40workspace%3Aapps%2Fdemo":
   version: 1.15.1
-  resolution: "react-native-ble-nitro@file:../../../react-native-ble-nitro#../../../react-native-ble-nitro::hash=c90d3f&locator=%40expo-harmony%2Fdemo%40workspace%3Aapps%2Fdemo"
+  resolution: "react-native-ble-nitro@file:../../../react-native-ble-nitro#../../../react-native-ble-nitro::hash=a8a50b&locator=%40expo-harmony%2Fdemo%40workspace%3Aapps%2Fdemo"
   peerDependencies:
     react-native: ">=0.76.0"
     react-native-nitro-modules: ">=0.35.0"
-  checksum: 10c0/eda236a2e0cccd101b4d4beaad4c84537ef03a2c7367db18d9b2a4aee1d2fb9e3fda3b130cae8b6c704f85e71715ea51e414ccbfef0ef928d9dcc349247a7632
+  checksum: 10c0/54eada2939ca91e4d3d15dca56d6ec4f76173894f618e1fa3c548f86a07cb3b176803eeb0ed51984a4ce6f7d4c980db130a797687c21eacb35439296c9a00c89
   languageName: node
   linkType: hard
 
@@ -11595,6 +11617,30 @@ __metadata:
     react: "*"
     react-native: "*"
   checksum: 10c0/3cdc702d8e21c63331e306a2b971307d5d9e13df52d94f435c5bb8d5dcf09fed00f4ef788e85ba87fae1ba5b155f4cdc2ee177a70f1f512adff73f94eef844d1
+  languageName: node
+  linkType: hard
+
+"react-native-tcp-socket@npm:6.2.0":
+  version: 6.2.0
+  resolution: "react-native-tcp-socket@npm:6.2.0"
+  dependencies:
+    buffer: "npm:^5.4.3"
+    eventemitter3: "npm:^4.0.7"
+  peerDependencies:
+    react-native: ">=0.60.0"
+  checksum: 10c0/e6d7eb2c9271dfb2c3114c6f5a7ef34279d67394c6398c8839cfc88bd1ab49b954643bc59ab35f3dd771c17ebc710b42c0911a949404c1a381297f0a140c64fe
+  languageName: node
+  linkType: hard
+
+"react-native-tcp-socket@npm:6.3.0":
+  version: 6.3.0
+  resolution: "react-native-tcp-socket@npm:6.3.0"
+  dependencies:
+    buffer: "npm:^5.4.3"
+    eventemitter3: "npm:^4.0.7"
+  peerDependencies:
+    react-native: ">=0.60.0"
+  checksum: 10c0/b1d753b215888a6a3ff15ac55f9c3edfa9b6c6b455e7274135064a8797aef2fee7b653d388c36338a54de90ebda4508656d785e27aa82bcc122b0e8801f62919
   languageName: node
   linkType: hard
 

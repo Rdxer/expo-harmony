@@ -48,6 +48,7 @@ import { ExpoModulesDemo } from './expoModules/ExpoModulesDemo';
 import { HapticsDemo } from './haptics';
 import { AdditionalModuleDemo } from './packageScreens';
 import { palette } from './theme';
+import { TcpDemo } from './tcpDemo';
 import {
   ActionButton,
   ActionRow,
@@ -2110,6 +2111,7 @@ export function ModuleDemo({ id }: { id: ModuleId }) {
     case 'navigation-bar': return <NavigationBarDemo />;
     case 'sharing': return <SharingDemo />;
     case 'ble': return <BleDemo />;
+    case 'tcp': return <TcpDemo />;
     case 'network': return <NetworkDemo />;
     case 'camera': return <CameraDemo />;
     case 'battery': return <BatteryDemo />;

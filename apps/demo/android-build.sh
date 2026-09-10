@@ -36,8 +36,14 @@ done
 
 # ---------- 1. 编译 ----------
 if [ "$SKIP_BUILD" -eq 0 ]; then
-  echo "🔨 编译 APK（$VARIANT）..."
-  (cd "$ANDROID_DIR" && ./gradlew "assemble${VARIANT^}")
+  echo "🔨 编译 APK（${VARIANT}）..."
+  # bash 3.2 不支持 ${VARIANT^} 首字母大写，用 case 映射 gradle task
+  case "$VARIANT" in
+    debug) GRADLE_TASK="assembleDebug" ;;
+    release) GRADLE_TASK="assembleRelease" ;;
+    *) echo "❌ 未知 variant: $VARIANT（支持 debug / release）"; exit 1 ;;
+  esac
+  (cd "$ANDROID_DIR" && ./gradlew "$GRADLE_TASK")
 else
   echo "⏭️  跳过编译"
 fi

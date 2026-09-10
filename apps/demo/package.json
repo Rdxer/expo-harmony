@@ -17,15 +17,6 @@
   "bugs": "https://github.com/renbaoshuo/expo-harmony/issues",
   "private": true,
   "main": "expo-router/entry",
-  "expo": {
-    "autolinking": {
-      "harmony": {
-        "exclude": [
-          "react-native-ble-nitro"
-        ]
-      }
-    }
-  },
   "author": "Baoshuo <i@baoshuo.ren>",
   "scripts": {
     "start": "expo start",

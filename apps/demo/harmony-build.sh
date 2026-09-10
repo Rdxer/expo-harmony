@@ -35,10 +35,11 @@ done
 
 # ---------- 1. 编译 ----------
 if [ "$SKIP_BUILD" -eq 0 ]; then
-  # ble_nitro HAR 缺少 oh_modules 时先装依赖（否则 OhmUrl 解析报错）
-  if [ ! -d "$HARMONY_DIR/ble_nitro/oh_modules" ]; then
-    echo "📦 ble_nitro 缺少 oh_modules，执行 ohpm install ..."
-    (cd "$HARMONY_DIR/ble_nitro" && "$OHPM" install)
+  # harmony 工程根缺 oh_modules 时先装依赖（ble_nitro 已由 autolinking
+  # 通过 node_modules 里的预编译 HAR 引入，无需单独处理）
+  if [ ! -d "$HARMONY_DIR/oh_modules" ]; then
+    echo "📦 harmony 缺少 oh_modules，执行 ohpm install ..."
+    (cd "$HARMONY_DIR" && "$OHPM" install)
   fi
   echo "🔨 编译 HAP ..."
   (cd "$HARMONY_DIR" && "$HVIGORW" assembleHap --mode module -p module=entry@default -p product=default --no-daemon)

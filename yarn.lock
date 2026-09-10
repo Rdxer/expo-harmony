@@ -11496,11 +11496,11 @@ __metadata:
 
 "react-native-ble-nitro@file:../../../react-native-ble-nitro::locator=%40expo-harmony%2Fdemo%40workspace%3Aapps%2Fdemo":
   version: 1.15.1
-  resolution: "react-native-ble-nitro@file:../../../react-native-ble-nitro#../../../react-native-ble-nitro::hash=272827&locator=%40expo-harmony%2Fdemo%40workspace%3Aapps%2Fdemo"
+  resolution: "react-native-ble-nitro@file:../../../react-native-ble-nitro#../../../react-native-ble-nitro::hash=c90d3f&locator=%40expo-harmony%2Fdemo%40workspace%3Aapps%2Fdemo"
   peerDependencies:
     react-native: ">=0.76.0"
     react-native-nitro-modules: ">=0.35.0"
-  checksum: 10c0/a9cccb34a241f288ea4363536c688b51930ca72e1c395f2e768a5fa13d9f3cc44a3d95c4de1517f1066a697663ad51e63b0328282bdda65007ca40f132020e18
+  checksum: 10c0/eda236a2e0cccd101b4d4beaad4c84537ef03a2c7367db18d9b2a4aee1d2fb9e3fda3b130cae8b6c704f85e71715ea51e414ccbfef0ef928d9dcc349247a7632
   languageName: node
   linkType: hard
 
